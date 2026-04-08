@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Game Table - President</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&amp;family=Manrope:wght@300;400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "tertiary-fixed": "#ffdcc1",
+                        "background": "#121416",
+                        "on-primary-fixed-variant": "#544600",
+                        "tertiary-fixed-dim": "#ffb779",
+                        "on-primary-fixed": "#221b00",
+                        "surface-container-lowest": "#0c0e10",
+                        "tertiary-container": "#2e1600",
+                        "outline": "#8f9194",
+                        "on-tertiary": "#4c2700",
+                        "surface-variant": "#333537",
+                        "surface-bright": "#38393c",
+                        "primary-fixed": "#ffe16d",
+                        "on-secondary-container": "#b8b8b8",
+                        "on-tertiary-fixed-variant": "#6c3a00",
+                        "secondary-fixed": "#e3e2e2",
+                        "on-error-container": "#ffdad6",
+                        "inverse-on-surface": "#2f3133",
+                        "on-primary-container": "#9b8200",
+                        "primary-container": "#221b00",
+                        "on-secondary-fixed": "#1a1c1c",
+                        "on-primary": "#3a3000",
+                        "inverse-primary": "#705d00",
+                        "primary": "#e9c400",
+                        "error": "#ffb4ab",
+                        "surface-tint": "#e9c400",
+                        "surface-container-low": "#1a1c1e",
+                        "on-surface": "#e2e2e5",
+                        "inverse-surface": "#e2e2e5",
+                        "on-background": "#e2e2e5",
+                        "on-secondary-fixed-variant": "#464747",
+                        "surface-container-high": "#282a2c",
+                        "tertiary": "#ffb779",
+                        "on-surface-variant": "#c5c6ca",
+                        "on-error": "#690005",
+                        "secondary-container": "#484949",
+                        "on-tertiary-container": "#bd7226",
+                        "secondary": "#c6c6c6",
+                        "surface-dim": "#121416",
+                        "primary-fixed-dim": "#e9c400",
+                        "surface-container": "#1e2022",
+                        "on-secondary": "#2f3131",
+                        "outline-variant": "#44474a",
+                        "on-tertiary-fixed": "#2e1500",
+                        "surface-container-highest": "#333537",
+                        "surface": "#121416",
+                        "error-container": "#93000a",
+                        "secondary-fixed-dim": "#c6c6c6"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    "fontFamily": {
+                        "headline": ["Space Grotesk"],
+                        "body": ["Manrope"],
+                        "label": ["Manrope"]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .scum-pill, .pres-pill, .vice-pill { border-radius: 0.75rem 0.25rem 0.75rem 0.25rem; }
+        
+        .hand-card {
+            transition: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        .hand-card:hover {
+            transform: translateY(-2.5rem) scale(1.15) rotate(0deg) !important;
+            z-index: 100 !important;
+        }
+        
+        /* Perfect semi-circle layout for opponents around center */
+        .player-circle-container {
+            position: relative;
+            width: 320px;
+            height: 320px;
+        }
+        
+        /* Positioning logic based on a 320px container center */
+        /* Left: 225 deg approx */
+        .player-pos-left { top: 35%; left: 0%; transform: translate(-50%, -50%); }
+        /* Top Left: 315 deg approx */
+        .player-pos-top-left { top: 0%; left: 20%; transform: translate(-50%, -50%); }
+        /* Top Center: 0 deg (360) */
+        .player-pos-top { top: -15%; left: 50%; transform: translate(-50%, -50%); }
+        /* Top Right: 45 deg approx */
+        .player-pos-top-right { top: 0%; left: 80%; transform: translate(-50%, -50%); }
+        /* Right: 135 deg approx */
+        .player-pos-right { top: 35%; left: 100%; transform: translate(-50%, -50%); }
+
+        .perspective-1000 { perspective: 1000px; }
+    </style>
+</head>
+<body class="bg-background text-on-surface font-body selection:bg-primary/30 min-h-screen overflow-hidden flex flex-col">
+<!-- Top Control -->
+<div class="fixed top-6 left-6 z-50">
+<button class="w-10 h-10 rounded-full bg-surface-container-high/80 backdrop-blur-md flex items-center justify-center border border-outline-variant/30 text-on-surface active:scale-90 transition-transform">
+<span class="material-symbols-outlined">arrow_back_ios_new</span>
+</button>
+</div>
+<main class="flex-grow flex flex-col relative overflow-hidden pt-20 pb-24">
+<!-- Digital Boardroom Environment -->
+<div class="absolute inset-0 z-0 opacity-20 pointer-events-none" style="background-image: radial-gradient(circle at center, #333537 0%, transparent 70%);"></div>
+<!-- The Table Field -->
+<div class="flex-grow flex flex-col items-center justify-center relative px-6 z-10">
+<div class="player-circle-container flex items-center justify-center">
+<!-- Player: Vice (Left) -->
+<div class="absolute player-pos-left flex flex-col items-center gap-1.5">
+<span class="text-[9px] font-bold text-secondary tracking-widest uppercase vice-pill bg-secondary/10 px-2.5 py-0.5">Vice</span>
+<div class="relative w-14 h-14 rounded-full p-0.5 border-2 border-secondary/50">
+<img class="w-full h-full rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAuZNaNXZTPvWiU2OXTt39Kv9GRb-TXhEd3NXSJFPLqYs8nv3HsRMKZOCRVRLSVFIsg_biEs3pUv5v9976eYqI5rjVtmloZiD8ryVfmJRUab5W1CZ16GHWMY0Dp3HmlLw3Xibe1HqZJtix72lR-Dgc3Ui7vLtSfnVuzGv8XzkxHqnGQe3Ghm4HAD8E5sl7VSb9jzawlqkYZE0dui7dNHrdqVQ6x_iQ179B5KVtGgjACJreKBQIArbBQdD8GnnUPAX7vsEBzEu8laN0i"/>
+</div>
+<div class="font-headline font-bold text-[11px] tracking-tight">Alexa_V</div>
+<div class="flex items-center gap-1 bg-surface-container-high px-2 py-0.5 rounded-full border border-outline-variant/30">
+<span class="material-symbols-outlined text-[9px] text-neutral-400" style="font-variation-settings: 'FILL' 1;">style</span>
+<span class="text-[10px] font-bold text-secondary">7</span>
+</div>
+</div>
+<!-- Player: Citizen (Top-Left) -->
+<div class="absolute player-pos-top-left flex flex-col items-center gap-1.5">
+<span class="text-[9px] font-bold text-on-surface/60 tracking-widest uppercase bg-surface-container-high px-2.5 py-0.5 rounded-full">Citizen</span>
+<div class="relative w-14 h-14 rounded-full p-0.5 border border-outline-variant/50">
+<img class="w-full h-full rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuta3OilVWIt8MlJ8AreXVXSTHKJgxgkmtuYVNHKHvijvfyDfxQmpDhrIx6jNsMyTEgsDpZHapkPN8PvNCDX-VAlPpGNg4j1jx4NHx04KD819aU-GlpYHH-8cPetJld-QZxK7wWGdLcwYm5ZPHbY20AA-u3cR2vgVFo6uybtFOWoZ2QnYwGJodgJS9FHYrl2fMX_54AoNP4Rr36ligo5rAYEjQEQAqEHQJVQgxp8R7SWRmOzHRe3GBR_IuoI8M-qgINYTulFl56526"/>
+</div>
+<div class="font-headline font-bold text-[11px] tracking-tight">Gamer_X</div>
+<div class="flex items-center gap-1 bg-surface-container-high px-2 py-0.5 rounded-full border border-outline-variant/30">
+<span class="material-symbols-outlined text-[9px] text-neutral-400" style="font-variation-settings: 'FILL' 1;">style</span>
+<span class="text-[10px] font-bold text-on-surface">5</span>
+</div>
+</div>
+<!-- Player: President (Top Center) -->
+<div class="absolute player-pos-top flex flex-col items-center gap-1.5">
+<span class="text-[9px] font-bold text-primary tracking-widest uppercase pres-pill bg-primary/10 px-2.5 py-0.5">President</span>
+<div class="relative w-16 h-16 rounded-full p-1 border-2 border-primary shadow-[0_0_15px_rgba(233,196,0,0.3)]">
+<img class="w-full h-full rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDucAO3UJyU7xaKSDqZMubvK7ME3tcq8lx5xs-mWifs83pXesnKoB1JvXuBlL5EEmYZO8veM69sDoV8NkEwXUteVXkb6BLTD8OHagLVqm5GO0QBTCv9poG4QnGOt4hCagQftCDKw05SxZaaboqAF3mEAlZUadsrDMLdsv_ru8D9XAsj6ffaVbcE9tnKT-FnCzuBkDjyMXGhjPAYAhe_pjCp_oESiN-ggdxnU2wnGlf9sqzvOqaOTIpZj6lbQVy4wrccqewllcRaRNnM"/>
+</div>
+<div class="font-headline font-bold text-xs tracking-tight">Julian_Exec</div>
+<div class="flex items-center gap-1 bg-surface-container-high px-2 py-0.5 rounded-full border border-outline-variant/30">
+<span class="material-symbols-outlined text-[10px] text-neutral-400" style="font-variation-settings: 'FILL' 1;">style</span>
+<span class="text-[10px] font-bold text-primary">4</span>
+</div>
+</div>
+<!-- Player: Citizen (Top-Right) -->
+<div class="absolute player-pos-top-right flex flex-col items-center gap-1.5">
+<span class="text-[9px] font-bold text-on-surface/60 tracking-widest uppercase bg-surface-container-high px-2.5 py-0.5 rounded-full">Citizen</span>
+<div class="relative w-14 h-14 rounded-full p-0.5 border border-outline-variant/50">
+<img class="w-full h-full rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuta3OilVWIt8MlJ8AreXVXSTHKJgxgkmtuYVNHKHvijvfyDfxQmpDhrIx6jNsMyTEgsDpZHapkPN8PvNCDX-VAlPpGNg4j1jx4NHx04KD819aU-GlpYHH-8cPetJld-QZxK7wWGdLcwYm5ZPHbY20AA-u3cR2vgVFo6uybtFOWoZ2QnYwGJodgJS9FHYrl2fMX_54AoNP4Rr36ligo5rAYEjQEQAqEHQJVQgxp8R7SWRmOzHRe3GBR_IuoI8M-qgINYTulFl56526"/>
+</div>
+<div class="font-headline font-bold text-[11px] tracking-tight">Player_4</div>
+<div class="flex items-center gap-1 bg-surface-container-high px-2 py-0.5 rounded-full border border-outline-variant/30">
+<span class="material-symbols-outlined text-[9px] text-neutral-400" style="font-variation-settings: 'FILL' 1;">style</span>
+<span class="text-[10px] font-bold text-on-surface">9</span>
+</div>
+</div>
+<!-- Player: Scum (Right) -->
+<div class="absolute player-pos-right flex flex-col items-center gap-1.5">
+<span class="text-[9px] font-bold text-error tracking-widest uppercase scum-pill bg-error/10 px-2.5 py-0.5">Scum</span>
+<div class="relative w-14 h-14 rounded-full p-0.5 border-2 border-error/50">
+<img class="w-full h-full rounded-full object-cover" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCuta3OilVWIt8MlJ8AreXVXSTHKJgxgkmtuYVNHKHvijvfyDfxQmpDhrIx6jNsMyTEgsDpZHapkPN8PvNCDX-VAlPpGNg4j1jx4NHx04KD819aU-GlpYHH-8cPetJld-QZxK7wWGdLcwYm5ZPHbY20AA-u3cR2vgVFo6uybtFOWoZ2QnYwGJodgJS9FHYrl2fMX_54AoNP4Rr36ligo5rAYEjQEQAqEHQJVQgxp8R7SWRmOzHRe3GBR_IuoI8M-qgINYTulFl56526"/>
+</div>
+<div class="font-headline font-bold text-[11px] tracking-tight">Scrap_01</div>
+<div class="flex items-center gap-1 bg-surface-container-high px-2 py-0.5 rounded-full border border-outline-variant/30">
+<span class="material-symbols-outlined text-[9px] text-neutral-400" style="font-variation-settings: 'FILL' 1;">style</span>
+<span class="text-[10px] font-bold text-error">12</span>
+</div>
+</div>
+<!-- Center Play Area (Single Card) -->
+<div class="relative w-48 h-48 flex items-center justify-center">
+<div class="absolute inset-0 bg-primary/5 rounded-full blur-[60px]"></div>
+<!-- Only one card representing the last play -->
+<div class="w-24 h-36 rounded-xl shadow-2xl flex border-2 border-outline-variant/30 transform rotate-6 scale-110 bg-surface-container-highest">
+<div class="flex flex-col justify-between h-full p-2.5">
+<div class="flex flex-col items-start leading-none">
+<span class="font-headline font-bold text-base text-error">K</span>
+<span class="material-symbols-outlined text-error text-xs">diamond</span>
+</div>
+<div class="flex justify-center">
+<span class="material-symbols-outlined text-error text-6xl opacity-60" style="font-variation-settings: 'FILL' 1;">diamond</span>
+</div>
+<div class="flex flex-col items-end leading-none rotate-180">
+<span class="font-headline font-bold text-base text-error">K</span>
+<span class="material-symbols-outlined text-error text-xs">diamond</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Player Controls & Hand -->
+<div class="fixed bottom-12 w-full z-40 px-4">
+<div class="max-w-xl mx-auto flex flex-col items-center">
+<!-- Distinct Action Buttons -->
+<div class="flex justify-center gap-4 mb-8 w-full px-6">
+<button class="flex-1 max-w-[140px] bg-surface-container-high/60 backdrop-blur-md text-on-surface py-3 rounded-xl font-headline font-bold text-sm tracking-widest uppercase border border-outline-variant/20 shadow-lg active:scale-95 transition-all">
+                    Pass
+                </button>
+<button class="flex-1 max-w-[180px] bg-primary text-on-primary py-3 rounded-xl font-headline font-bold text-sm tracking-widest uppercase shadow-[0_8px_24px_rgba(233,196,0,0.3)] hover:brightness-110 active:scale-95 transition-all">
+                    Play Hand
+                </button>
+</div>
+<!-- Fanned Hand Area -->
+<div class="relative w-full h-40 flex justify-center perspective-1000">
+<!-- Card 3 -->
+<div class="hand-card absolute bottom-0 w-20 h-32 bg-surface-container-highest rounded-xl border border-outline-variant/40 flex flex-col justify-between p-2.5 shadow-2xl cursor-pointer" style="transform: rotate(-16deg) translateX(-150px) translateY(12px);">
+<span class="font-headline font-bold text-base text-error leading-none">3</span>
+<span class="material-symbols-outlined text-error text-xs self-center">favorite</span>
+<span class="font-headline font-bold text-base text-error self-end rotate-180 leading-none">3</span>
+</div>
+<!-- Card 5 -->
+<div class="hand-card absolute bottom-0 w-20 h-32 bg-surface-container-highest rounded-xl border border-outline-variant/40 flex flex-col justify-between p-2.5 shadow-2xl cursor-pointer" style="transform: rotate(-12deg) translateX(-110px) translateY(8px);">
+<span class="font-headline font-bold text-base leading-none">5</span>
+<span class="material-symbols-outlined text-on-surface text-xs self-center">diamond</span>
+<span class="font-headline font-bold text-base self-end rotate-180 leading-none">5</span>
+</div>
+<!-- Card 5 -->
+<div class="hand-card absolute bottom-0 w-20 h-32 bg-surface-container-highest rounded-xl border border-outline-variant/40 flex flex-col justify-between p-2.5 shadow-2xl cursor-pointer" style="transform: rotate(-8deg) translateX(-70px) translateY(4px);">
+<span class="font-headline font-bold text-base leading-none">5</span>
+<span class="material-symbols-outlined text-on-surface text-xs self-center">eco</span>
+<span class="font-headline font-bold text-base self-end rotate-180 leading-none">5</span>
+</div>
+<!-- Card 10 -->
+<div class="hand-card absolute bottom-0 w-20 h-32 bg-surface-container-highest rounded-xl border border-outline-variant/40 flex flex-col justify-between p-2.5 shadow-2xl cursor-pointer" style="transform: rotate(-4deg) translateX(-30px) translateY(0px);">
+<span class="font-headline font-bold text-base leading-none">10</span>
+<span class="material-symbols-outlined text-on-surface text-xs self-center">grade</span>
+<span class="font-headline font-bold text-base self-end rotate-180 leading-none">10</span>
+</div>
+<!-- Card J -->
+<div class="hand-card absolute bottom-0 w-20 h-32 bg-surface-container-highest rounded-xl border border-outline-variant/40 flex flex-col justify-between p-2.5 shadow-2xl cursor-pointer" style="transform: rotate(0deg) translateX(10px) translateY(-4px);">
+<span class="font-headline font-bold text-base text-error leading-none">J</span>
+<span class="material-symbols-outlined text-error text-xs self-center">favorite</span>
+<span class="font-headline font-bold text-base text-error self-end rotate-180 leading-none">J</span>
+</div>
+<!-- Card Q -->
+<div class="hand-card absolute bottom-0 w-20 h-32 bg-surface-container-highest rounded-xl border border-outline-variant/40 flex flex-col justify-between p-2.5 shadow-2xl cursor-pointer" style="transform: rotate(4deg) translateX(50px) translateY(0px);">
+<span class="font-headline font-bold text-base leading-none">Q</span>
+<span class="material-symbols-outlined text-on-surface text-xs self-center">diamond</span>
+<span class="font-headline font-bold text-base self-end rotate-180 leading-none">Q</span>
+</div>
+<!-- Card K (Selected) -->
+<div class="hand-card absolute bottom-0 w-20 h-32 bg-surface-bright rounded-xl border-2 border-primary flex flex-col justify-between p-2.5 shadow-[0_12px_32px_rgba(233,196,0,0.4)] cursor-pointer z-20" style="transform: rotate(8deg) translateX(90px) translateY(-15px);">
+<span class="font-headline font-bold text-base text-primary leading-none">K</span>
+<span class="material-symbols-outlined text-primary text-xs self-center">grade</span>
+<span class="font-headline font-bold text-base text-primary self-end rotate-180 leading-none">K</span>
+<div class="absolute -top-2 -right-2 bg-primary text-on-primary rounded-full p-0.5">
+<span class="material-symbols-outlined text-[10px]">check</span>
+</div>
+</div>
+<!-- Card A -->
+<div class="hand-card absolute bottom-0 w-20 h-32 bg-surface-container-highest rounded-xl border border-outline-variant/40 flex flex-col justify-between p-2.5 shadow-2xl cursor-pointer" style="transform: rotate(12deg) translateX(130px) translateY(8px);">
+<span class="font-headline font-bold text-base text-error leading-none">A</span>
+<span class="material-symbols-outlined text-error text-xs self-center">favorite</span>
+<span class="font-headline font-bold text-base text-error self-end rotate-180 leading-none">A</span>
+</div>
+<!-- Card 2 -->
+<div class="hand-card absolute bottom-0 w-20 h-32 bg-surface-container-highest rounded-xl border border-outline-variant/40 flex flex-col justify-between p-2.5 shadow-2xl cursor-pointer" style="transform: rotate(16deg) translateX(170px) translateY(12px);">
+<span class="font-headline font-bold text-base leading-none">2</span>
+<span class="material-symbols-outlined text-on-surface text-xs self-center">eco</span>
+<span class="font-headline font-bold text-base self-end rotate-180 leading-none">2</span>
+</div>
+</div>
+</div>
+</div>
+</main>
+</body></html>
