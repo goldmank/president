@@ -8,3 +8,6 @@ Original prompt: Build a playable skeleton for a mobile-first card game app base
 - Runtime validation hit a Vite bind issue on `::1`; forcing dev server host to `127.0.0.1`.
 - Added workspace-local VS Code MCP config for Stitch in `.vscode/mcp.json`.
 - TODO: add deterministic browser smoke test hooks and run a full local verification loop after implementation.
+- Added DOM-driven results overlay and Stitch-style Power Shift section.
+- Added DOM-driven exchange overlay with selectable hand cards, role-based required card counts, results-to-exchange flow, and mock exchange entry points via `?mockExchange=1`, `X`, and `window.toggleMockExchange()`.
+- TODO: wire the exchange overlay to real server-side exchange state/actions instead of preview/mock-only behavior.

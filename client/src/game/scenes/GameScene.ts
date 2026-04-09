@@ -4,6 +4,7 @@ import { GameApi } from "../../api/GameApi";
 import { installDebugHooks } from "../debugHooks";
 import { computeTableLayout, type TableLayout } from "../layout";
 import { CardView } from "../objects/CardView";
+import { buildMockResultsData, buildResultsData } from "../../results/resultsOverlay";
 import { palette, toColorNumber } from "../theme";
 
 function hashString(value: string): number {
@@ -68,6 +69,8 @@ export class GameScene extends Phaser.Scene {
   private debugLogVisible = false;
   private botTimer?: Phaser.Time.TimerEvent;
   private busy = false;
+  private mockResultsEnabled = import.meta.env.DEV && new URLSearchParams(window.location.search).get("mockResults") === "1";
+  private mockExchangeEnabled = import.meta.env.DEV && new URLSearchParams(window.location.search).get("mockExchange") === "1";
 
   public constructor() {
     super("game");
@@ -95,13 +98,47 @@ export class GameScene extends Phaser.Scene {
       }
     });
     if (this.debugMode) {
+      window.toggleMockResults = (enabled?: boolean) => {
+        this.mockResultsEnabled = enabled ?? !this.mockResultsEnabled;
+        this.renderState();
+      };
+      window.toggleMockExchange = (enabled?: boolean) => {
+        this.mockExchangeEnabled = enabled ?? !this.mockExchangeEnabled;
+        this.renderState();
+      };
       this.input.keyboard?.on("keydown-BACKTICK", () => {
         this.debugLogVisible = !this.debugLogVisible;
+        this.renderState();
+      });
+      this.input.keyboard?.on("keydown-R", () => {
+        this.mockResultsEnabled = !this.mockResultsEnabled;
+        this.renderState();
+      });
+      this.input.keyboard?.on("keydown-X", () => {
+        this.mockExchangeEnabled = !this.mockExchangeEnabled;
         this.renderState();
       });
     }
 
     await this.loadNewGame();
+  }
+
+  public startNewGame(): void {
+    void this.loadNewGame();
+  }
+
+  public setMockResultsEnabled(enabled: boolean): void {
+    this.mockResultsEnabled = enabled;
+    this.renderState();
+  }
+
+  public setMockExchangeEnabled(enabled: boolean): void {
+    this.mockExchangeEnabled = enabled;
+    this.renderState();
+  }
+
+  public getCurrentState(): PublicGameState | null {
+    return this.gameState;
   }
 
   private async loadNewGame(): Promise<void> {
@@ -477,6 +514,10 @@ export class GameScene extends Phaser.Scene {
     if (!state) {
       return;
     }
+
+    const resultsPayload = this.mockResultsEnabled ? buildMockResultsData(state) : state.phase === "finished" ? buildResultsData(state) : null;
+    window.dispatchEvent(new CustomEvent("president:results", { detail: resultsPayload }));
+    window.dispatchEvent(new CustomEvent("president:exchange", { detail: this.mockExchangeEnabled ? state : null }));
 
     this.syncDisplayedPile(state);
 
