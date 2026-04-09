@@ -30,7 +30,7 @@ export interface ExchangeOverlayData {
   instruction: string;
   primaryLabel: string;
   secondaryLabel: string;
-  seats: ExchangeSeat[];
+  counterpartSeats: ExchangeSeat[];
   hand: ExchangeHandCard[];
 }
 
@@ -83,15 +83,15 @@ function handCards(cards: Card[]): ExchangeHandCard[] {
 function requirementForRole(role: string): { count: number; instruction: string } {
   switch (role) {
     case "President":
-      return { count: 2, instruction: "Select your 2 worst assets to send to the Scum." };
+      return { count: 2, instruction: "Select your 2 worst assets to send to the Scum" };
     case "Vice":
-      return { count: 1, instruction: "Select your weakest card to send to the Vice Scum." };
+      return { count: 1, instruction: "Select your weakest card to send to the Vice Scum" };
     case "Scum":
-      return { count: 2, instruction: "Select your 2 best assets to send to the President." };
+      return { count: 2, instruction: "Select your 2 best assets to send to the President" };
     case "Vice Scum":
-      return { count: 1, instruction: "Select your best card to send to the Vice." };
+      return { count: 1, instruction: "Select your best card to send to the Vice" };
     default:
-      return { count: 0, instruction: "No exchange required. Wait for the hierarchy to finish trading." };
+      return { count: 0, instruction: "No exchange required. Wait for the hierarchy to finish trading" };
   }
 }
 
@@ -113,6 +113,24 @@ function deriveSeats(players: PublicPlayerState[], viewerId: string): ExchangeSe
     });
 }
 
+function deriveCounterpartSeats(seats: ExchangeSeat[], viewerRole: string, viewerId: string): ExchangeSeat[] {
+  const viewerSeat = seats.find((seat) => seat.playerId === viewerId);
+  if (!viewerSeat) {
+    return [];
+  }
+
+  const roleTargets: Record<string, string[]> = {
+    President: ["Scum"],
+    "Vice": ["Vice Scum"],
+    Scum: ["President"],
+    "Vice Scum": ["Vice"]
+  };
+
+  const targets = roleTargets[viewerRole] ?? [];
+  const counterpart = seats.find((seat) => targets.includes(seat.role));
+  return counterpart ? [viewerSeat, counterpart] : [viewerSeat];
+}
+
 function fallbackHand(): Card[] {
   return createDeck().filter((card) => ["3-clubs", "3-diamonds", "5-spades", "6-hearts", "7-clubs", "8-diamonds", "9-spades", "10-clubs", "11-hearts", "12-diamonds", "13-spades", "14-hearts", "15-clubs"].includes(card.id));
 }
@@ -124,15 +142,15 @@ export function buildExchangePreviewData(state: PublicGameState): ExchangeOverla
 
   return {
     mode: "preview",
-    title: `Power Shift: ${viewerSeat?.role.toUpperCase() ?? "CITIZEN"} Selection`,
+    title: "POWER SHIFT",
     subtitle: instruction,
     requiredCount: count,
     viewerRole: viewerSeat?.role ?? "Citizen",
     viewerName: viewerSeat?.name ?? "You",
     instruction,
     primaryLabel: count > 0 ? "Confirm Exchange" : "Continue to Match",
-    secondaryLabel: count > 0 ? "Cancel Selection" : "Close",
-    seats,
+    secondaryLabel: count > 0 ? "Leave Game" : "Close",
+    counterpartSeats: deriveCounterpartSeats(seats, viewerSeat?.role ?? "Citizen", state.viewerPlayerId),
     hand: handCards(state.viewerHand.length > 0 ? state.viewerHand : fallbackHand())
   };
 }
@@ -175,11 +193,11 @@ export function buildMockExchangeData(baseState?: PublicGameState | null): Excha
     log: []
   };
 
-  return {
+    return {
     ...buildExchangePreviewData(mockState),
     mode: "mock",
     primaryLabel: "Confirm Exchange",
-    secondaryLabel: "Cancel Selection"
+    secondaryLabel: "Leave Game"
   };
 }
 
@@ -291,18 +309,21 @@ export class ExchangeOverlay {
     seats.style.gap = "14px";
     seats.style.marginTop = "18px";
     seats.style.flexWrap = "wrap";
-    data.seats.slice(0, 5).forEach((seat) => {
+    data.counterpartSeats.forEach((seat) => {
       const seatEl = document.createElement("div");
       seatEl.className = `exchange-overlay__seat ${seat.isViewer ? "is-viewer" : ""}`;
       seatEl.style.display = "grid";
-      seatEl.style.gap = "8px";
+      seatEl.style.gap = "10px";
       seatEl.style.justifyItems = "center";
       if (seat.isViewer) {
         seatEl.style.transform = "scale(1.06)";
       }
       seatEl.innerHTML = `
-        <div class="exchange-overlay__seat-avatar" style="--avatar:${seat.avatarColor}">${seat.name.slice(0, 1).toUpperCase()}</div>
-        <div class="exchange-overlay__seat-role">${seat.isViewer ? "YOU" : seat.role.toUpperCase()}</div>
+        <div class="exchange-overlay__seat-avatar-wrap">
+          <div class="exchange-overlay__seat-avatar" style="--avatar:${seat.avatarColor}">${seat.name.slice(0, 1).toUpperCase()}</div>
+        </div>
+        <div class="exchange-overlay__seat-role">${seat.role.toUpperCase()}</div>
+        <div class="exchange-overlay__seat-name">${seat.name}</div>
       `;
       seats.appendChild(seatEl);
     });
@@ -317,7 +338,7 @@ export class ExchangeOverlay {
     if (title) {
       title.style.margin = "0 0 10px";
       title.style.color = palette.primary;
-      title.style.font = '900 28px/1.05 "Space Grotesk", sans-serif';
+      title.style.font = '900 34px/1 "Space Grotesk", sans-serif';
       title.style.letterSpacing = "-0.04em";
       title.style.textTransform = "uppercase";
     }
@@ -330,22 +351,37 @@ export class ExchangeOverlay {
       const avatar = element as HTMLElement;
       avatar.style.display = "grid";
       avatar.style.placeItems = "center";
-      avatar.style.width = "52px";
-      avatar.style.height = "52px";
-      avatar.style.borderRadius = "14px";
+      avatar.style.width = "58px";
+      avatar.style.height = "58px";
+      avatar.style.borderRadius = "999px";
       avatar.style.background = "color-mix(in srgb, var(--avatar) 82%, #121416)";
-      avatar.style.border = "1px solid rgba(255,255,255,.12)";
+      avatar.style.border = "2px solid rgba(255,255,255,.12)";
       avatar.style.color = "#121416";
-      avatar.style.font = '800 14px/1 "Space Grotesk", sans-serif';
+      avatar.style.font = '800 16px/1 "Space Grotesk", sans-serif';
+      avatar.style.boxShadow = "0 10px 20px rgba(0,0,0,.24)";
+    });
+    seats.querySelectorAll(".exchange-overlay__seat-avatar-wrap").forEach((element) => {
+      const wrap = element as HTMLElement;
+      wrap.style.position = "relative";
+      wrap.style.display = "grid";
+      wrap.style.placeItems = "center";
     });
     seats.querySelectorAll(".exchange-overlay__seat-role").forEach((element) => {
       const role = element as HTMLElement;
-      role.style.padding = "4px 8px";
-      role.style.borderRadius = "4px";
+      role.style.order = "-1";
+      role.style.padding = "4px 9px";
+      role.style.borderRadius = "999px";
       role.style.background = "rgba(255,255,255,.08)";
       role.style.font = '800 10px/1 "Manrope", sans-serif';
       role.style.letterSpacing = ".12em";
       role.style.textTransform = "uppercase";
+      role.style.color = palette.text;
+    });
+    seats.querySelectorAll(".exchange-overlay__seat-name").forEach((element) => {
+      const name = element as HTMLElement;
+      name.style.font = '700 13px/1.1 "Space Grotesk", sans-serif';
+      name.style.color = palette.text;
+      name.style.textAlign = "center";
     });
     return header;
   }
@@ -567,7 +603,7 @@ export class ExchangeOverlay {
     confirm.style.background = `linear-gradient(135deg, ${palette.primary} 0%, ${palette.primaryDim} 100%)`;
     confirm.style.color = palette.onPrimary;
     confirm.style.cursor = confirm.disabled ? "default" : "pointer";
-    confirm.style.font = '900 12px/1 "Space Grotesk", sans-serif';
+    confirm.style.font = '900 14px/1 "Space Grotesk", sans-serif';
     confirm.style.letterSpacing = ".18em";
     confirm.style.textTransform = "uppercase";
     confirm.style.opacity = confirm.disabled ? "0.45" : "1";
@@ -578,7 +614,7 @@ export class ExchangeOverlay {
     cancel.type = "button";
     cancel.textContent = data.secondaryLabel;
     cancel.style.width = "100%";
-    cancel.style.marginTop = "14px";
+    cancel.style.marginTop = "22px";
     cancel.style.border = "0";
     cancel.style.background = "transparent";
     cancel.style.color = palette.outline;
