@@ -64,10 +64,16 @@ function suitSymbol(suit: Suit): string {
       return "♣";
     case "spades":
       return "♠";
+    case "joker":
+      return "★";
   }
 }
 
 function suitClass(suit: Suit): string {
+  if (suit === "joker") {
+    return "is-gold";
+  }
+
   return suit === "hearts" || suit === "diamonds" ? "is-red" : "is-dark";
 }
 
@@ -835,6 +841,10 @@ export class ExchangeOverlay {
       .exchange-hand-card.is-dark,
       .exchange-slot.is-dark {
         color: ${palette.text};
+      }
+      .exchange-hand-card.is-gold,
+      .exchange-slot.is-gold {
+        color: ${palette.primary};
       }
       .exchange-overlay__footer {
         flex: 0 0 auto;

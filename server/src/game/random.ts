@@ -1,4 +1,4 @@
-import type { Card } from "@president/shared";
+import { compareCards, type Card } from "@president/shared";
 
 export function shuffle<T>(items: T[]): T[] {
   const cloned = [...items];
@@ -16,11 +16,5 @@ export function now(): number {
 }
 
 export function sortHand(cards: Card[]): Card[] {
-  return [...cards].sort((left, right) => {
-    if (left.rank !== right.rank) {
-      return left.rank - right.rank;
-    }
-
-    return left.suit.localeCompare(right.suit);
-  });
+  return [...cards].sort(compareCards);
 }

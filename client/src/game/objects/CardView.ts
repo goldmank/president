@@ -1,30 +1,10 @@
 import Phaser from "phaser";
-import type { Card, Suit } from "@president/shared";
-import { rankLabelMap } from "@president/shared";
-import { palette, toColorNumber } from "../theme";
-
-function getSuitSymbol(suit: Suit): string {
-  switch (suit) {
-    case "hearts":
-      return "♥";
-    case "diamonds":
-      return "♦";
-    case "clubs":
-      return "♣";
-    case "spades":
-      return "♠";
-  }
-}
+import type { Card } from "@president/shared";
+import { CARD_HEIGHT, CARD_WIDTH, ensureCardTexture, type CardVisualState } from "../cardTextures";
 
 export class CardView extends Phaser.GameObjects.Container {
   public readonly card: Card;
-  private readonly background: Phaser.GameObjects.Rectangle;
-  private readonly innerFrame: Phaser.GameObjects.Rectangle;
-  private readonly cornerRank: Phaser.GameObjects.Text;
-  private readonly centerPip: Phaser.GameObjects.Text;
-  private readonly mirroredRank: Phaser.GameObjects.Text;
-  private readonly suitColor: string;
-  private readonly suitMutedColor = palette.mutedText;
+  private readonly face: Phaser.GameObjects.Image;
   private readonly hitPolygon = new Phaser.Geom.Polygon([
     -36, -52,
     36, -52,
@@ -32,59 +12,47 @@ export class CardView extends Phaser.GameObjects.Container {
     -36, 52
   ]);
   private interactiveForSelection = true;
+  private poseTween?: Phaser.Tweens.Tween;
 
   public constructor(scene: Phaser.Scene, card: Card, x: number, y: number) {
     super(scene, x, y);
     this.card = card;
-    this.suitColor = card.suit === "hearts" || card.suit === "diamonds" ? palette.danger : palette.text;
-    const suitSymbol = getSuitSymbol(card.suit);
-    const rankLabel = rankLabelMap[card.rank];
-
-    this.background = scene
-      .add.rectangle(0, 0, 72, 104, toColorNumber(palette.surfaceHighest))
-      .setStrokeStyle(1.5, toColorNumber(palette.outlineVariant), 0.8);
-    this.innerFrame = scene.add
-      .rectangle(0, 0, 62, 94)
-      .setStrokeStyle(1, toColorNumber(palette.outlineVariant), 0.32);
-    this.cornerRank = scene.add
-      .text(-23, -40, rankLabel, {
-        color: this.suitColor,
-        fontFamily: "Space Grotesk, sans-serif",
-        fontSize: rankLabel === "10" ? "14px" : "18px",
-        fontStyle: "bold"
-      })
-      .setOrigin(0, 0);
-    this.centerPip = scene.add
-      .text(0, 4, suitSymbol, {
-        color: this.suitColor,
-        fontFamily: "Space Grotesk, sans-serif",
-        fontSize: "32px",
-        fontStyle: "bold"
-      })
-      .setOrigin(0.5);
-    this.mirroredRank = scene.add
-      .text(17, 29, rankLabel, {
-        color: this.suitColor,
-        fontFamily: "Space Grotesk, sans-serif",
-        fontSize: rankLabel === "10" ? "14px" : "18px",
-        fontStyle: "bold"
-      })
-      .setOrigin(1, 1)
-      .setAngle(180);
-
-    this.add([
-      this.background,
-      this.innerFrame,
-      this.cornerRank,
-      this.centerPip,
-      this.mirroredRank
-    ]);
-    this.setSize(72, 104);
+    this.face = scene.add.image(0, 0, ensureCardTexture(scene, card, "normal"));
+    this.face.setDisplaySize(CARD_WIDTH, CARD_HEIGHT);
+    this.add(this.face);
+    this.setSize(CARD_WIDTH, CARD_HEIGHT);
     scene.add.existing(this);
   }
 
   public setSelected(selected: boolean): void {
-    void selected;
+    this.setData("selected", selected);
+  }
+
+  public syncPose(x: number, y: number, angle: number, scale: number, depth: number): void {
+    this.poseTween?.stop();
+    this.poseTween = undefined;
+    this.setPosition(x, y);
+    this.setAngle(angle);
+    this.setScale(scale);
+    this.setDepth(depth);
+  }
+
+  public tweenToPose(x: number, y: number, angle: number, scale: number, depth: number): void {
+    this.setDepth(depth);
+    this.poseTween?.stop();
+    this.poseTween = this.scene.tweens.add({
+      targets: this,
+      x,
+      y,
+      angle,
+      scaleX: scale,
+      scaleY: scale,
+      duration: 170,
+      ease: "Quad.Out",
+      onComplete: () => {
+        this.poseTween = undefined;
+      }
+    });
   }
 
   public setHitAreaProfile(width: number, slant: number): void {
@@ -103,27 +71,9 @@ export class CardView extends Phaser.GameObjects.Container {
 
   public setAvailabilityState(selectable: boolean, selected: boolean): void {
     this.interactiveForSelection = selectable || selected;
-    const disabled = !selectable && !selected;
-    const textColor = disabled ? this.suitMutedColor : selected ? palette.primary : this.suitColor;
-
-    this.setAlpha(1);
-    this.background.setFillStyle(
-      toColorNumber(disabled ? palette.surfaceContainer : selected ? palette.surfaceBright : palette.surfaceHighest)
-    );
-    this.background.setStrokeStyle(
-      2,
-      toColorNumber(disabled ? palette.outline : selected ? palette.primary : palette.outlineVariant),
-      disabled ? 0.9 : selected ? 1 : 0.8
-    );
-    this.innerFrame.setStrokeStyle(
-      1,
-      toColorNumber(disabled ? palette.outlineVariant : selected ? palette.primary : palette.outlineVariant),
-      disabled ? 0.38 : selected ? 0.8 : 0.32
-    );
-    this.cornerRank.setColor(textColor);
-    this.centerPip.setColor(textColor);
-    this.centerPip.setAlpha(disabled ? 0.55 : selected ? 1 : 0.85);
-    this.mirroredRank.setColor(textColor);
+    const state: CardVisualState = !selectable && !selected ? "disabled" : selected ? "selected" : "normal";
+    this.face.setTexture(ensureCardTexture(this.scene, this.card, state));
+    this.face.setDisplaySize(CARD_WIDTH, CARD_HEIGHT);
   }
 
   public containsScreenPoint(x: number, y: number): boolean {

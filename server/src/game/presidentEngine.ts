@@ -4,6 +4,7 @@ import {
   createDeck,
   defaultRulesConfig,
   isThreeOfClubs,
+  rankLabelMap,
   type Card,
   type GameAction,
   type GameState,
@@ -234,7 +235,7 @@ export function requirementText(state: GameState): string {
   }
 
   const setLabel = ["single", "pair", "triple", "four of a kind"][currentSet.count - 1] ?? `${currentSet.count}-card set`;
-  return `Must play ${setLabel} higher than ${currentSet.rank === 15 ? "2" : currentSet.rank === 14 ? "A" : currentSet.rank === 13 ? "K" : currentSet.rank === 12 ? "Q" : currentSet.rank === 11 ? "J" : currentSet.rank}`;
+  return `Must play ${setLabel} higher than ${rankLabelMap[currentSet.rank]}`;
 }
 
 export function createGame(options: CreateGameOptions = {}): GameState {
@@ -455,6 +456,43 @@ export function executeBotTurn(state: GameState): void {
     type: "pass",
     playerId: player.id
   });
+}
+
+export function executeAutoTurn(state: GameState): void {
+  if (state.phase !== "playing") {
+    return;
+  }
+
+  const player = getPlayer(state, state.currentTurnPlayerId);
+  const validMoves = listValidMoves(state, player.id);
+
+  if (validMoves.length > 0) {
+    const selectedMove = validMoves[0];
+    submitAction(state, {
+      type: "play",
+      playerId: player.id,
+      cardIds: selectedMove.cardIds
+    });
+    return;
+  }
+
+  submitAction(state, {
+    type: "pass",
+    playerId: player.id
+  });
+}
+
+export function fastForwardToEnd(state: GameState, maxSteps = 2048): void {
+  let steps = 0;
+
+  while (state.phase === "playing" && steps < maxSteps) {
+    executeAutoTurn(state);
+    steps += 1;
+  }
+
+  if (state.phase === "playing") {
+    throw new Error("Fast forward exceeded step limit");
+  }
 }
 
 export function runBotsUntilHumanTurn(state: GameState): GameState {

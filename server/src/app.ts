@@ -43,5 +43,16 @@ export function createApp(): express.Express {
     }
   });
 
+  app.post("/game/fast-forward", (_request, response) => {
+    try {
+      const nextState = games.fastForward();
+      response.json(nextState);
+    } catch (error) {
+      response.status(400).json({
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   return app;
 }

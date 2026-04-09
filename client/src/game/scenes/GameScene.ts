@@ -6,6 +6,7 @@ import { computeTableLayout, type TableLayout } from "../layout";
 import { CardView } from "../objects/CardView";
 import { buildMockResultsData, buildResultsData } from "../../results/resultsOverlay";
 import { palette, toColorNumber } from "../theme";
+import { applyTextResolution } from "../text";
 
 function hashString(value: string): number {
   let hash = 0;
@@ -43,10 +44,21 @@ interface SeatWidgets {
   badgeBg: Phaser.GameObjects.Rectangle;
   badgeText: Phaser.GameObjects.Text;
   nameText: Phaser.GameObjects.Text;
-  countBg: Phaser.GameObjects.Arc;
-  countIcon: Phaser.GameObjects.Text;
-  cardCountText: Phaser.GameObjects.Text;
+  handFan: Phaser.GameObjects.Container;
   statusText: Phaser.GameObjects.Text;
+}
+
+interface PilePose {
+  x: number;
+  y: number;
+  angle: number;
+  depth: number;
+}
+
+interface HandBackPose {
+  localX: number;
+  localY: number;
+  angle: number;
 }
 
 export class GameScene extends Phaser.Scene {
@@ -58,6 +70,8 @@ export class GameScene extends Phaser.Scene {
   private handCards: CardView[] = [];
   private displayedPileCards: Array<{ card: Card; key: string }> = [];
   private lastSeenPileTimestamp: number | null = null;
+  private fadingDisplayedPile = false;
+  private clearPileTimer?: Phaser.Time.TimerEvent;
   private centerGroup?: Phaser.GameObjects.Container;
   private backdrop?: Phaser.GameObjects.Graphics;
   private chromeGraphics?: Phaser.GameObjects.Graphics;
@@ -65,8 +79,10 @@ export class GameScene extends Phaser.Scene {
   private statusBanner?: Phaser.GameObjects.Container;
   private actionButton?: Phaser.GameObjects.Container;
   private logText?: Phaser.GameObjects.Text;
+  private debugHelpText?: Phaser.GameObjects.Text;
   private debugToggle?: Phaser.GameObjects.Container;
-  private debugLogVisible = false;
+  private debugMenu?: Phaser.GameObjects.Container;
+  private debugMenuVisible = false;
   private botTimer?: Phaser.Time.TimerEvent;
   private busy = false;
   private mockResultsEnabled = import.meta.env.DEV && new URLSearchParams(window.location.search).get("mockResults") === "1";
@@ -85,13 +101,16 @@ export class GameScene extends Phaser.Scene {
 
     this.scale.on("resize", () => this.renderState());
     this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
-      if (this.tryTriggerButton(this.actionButton, pointer.x, pointer.y) || this.tryTriggerButton(this.debugToggle, pointer.x, pointer.y)) {
+      const pointerX = pointer.x;
+      const pointerY = pointer.y;
+
+      if (this.tryTriggerButton(this.actionButton, pointerX, pointerY) || this.tryTriggerButton(this.debugToggle, pointerX, pointerY)) {
         return;
       }
 
       const clickedCard = [...this.handCards]
         .sort((left, right) => right.depth - left.depth)
-        .find((card) => card.containsScreenPoint(pointer.x, pointer.y));
+        .find((card) => card.containsScreenPoint(pointerX, pointerY));
 
       if (clickedCard) {
         this.toggleCardSelection(clickedCard.card);
@@ -107,7 +126,7 @@ export class GameScene extends Phaser.Scene {
         this.renderState();
       };
       this.input.keyboard?.on("keydown-BACKTICK", () => {
-        this.debugLogVisible = !this.debugLogVisible;
+        this.debugMenuVisible = !this.debugMenuVisible;
         this.renderState();
       });
       this.input.keyboard?.on("keydown-R", () => {
@@ -117,6 +136,9 @@ export class GameScene extends Phaser.Scene {
       this.input.keyboard?.on("keydown-X", () => {
         this.mockExchangeEnabled = !this.mockExchangeEnabled;
         this.renderState();
+      });
+      this.input.keyboard?.on("keydown-F", () => {
+        void this.fastForwardGame();
       });
     }
 
@@ -161,6 +183,10 @@ export class GameScene extends Phaser.Scene {
 
     this.busy = true;
     try {
+      if (payload.type === "play") {
+        await this.animatePlayedCards(payload.cardIds);
+      }
+
       this.gameState = await this.api.submitAction(payload);
       this.selectedCardIds.clear();
       this.scheduleBotTurnIfNeeded();
@@ -170,6 +196,269 @@ export class GameScene extends Phaser.Scene {
       this.busy = false;
       this.renderState();
     }
+  }
+
+  private async fastForwardGame(): Promise<void> {
+    if (!this.debugMode || this.busy) {
+      return;
+    }
+
+    this.busy = true;
+    this.botTimer?.remove(false);
+    this.botTimer = undefined;
+
+    try {
+      this.gameState = await this.api.fastForwardGame();
+    } catch (error) {
+      this.showBanner(error instanceof Error ? error.message : "Fast forward failed");
+    } finally {
+      this.busy = false;
+      this.renderState();
+      this.scheduleBotTurnIfNeeded();
+    }
+  }
+
+  private computePilePoses(layout: TableLayout, keys: string[]): PilePose[] {
+    const angleSteps = buildAngleSequence(Math.max(0, keys.length - 1), keys.join("|"));
+    const poses: PilePose[] = [];
+    let runningAngle = 0;
+    let stackBand = 0;
+
+    keys.forEach((key, index) => {
+      void key;
+
+      if (index > 0) {
+        const nextStep = angleSteps[index - 1];
+        if (runningAngle + nextStep > 90) {
+          runningAngle = 0;
+          stackBand += 1;
+        } else {
+          runningAngle += nextStep;
+        }
+      }
+
+      const signedAngle = (stackBand % 2 === 0 ? 1 : -1) * runningAngle;
+      const bandOffsetX = stackBand * 10;
+      const bandOffsetY = stackBand * 6;
+      const radius = Math.min(18, 6 + index * 0.7);
+      const radians = Phaser.Math.DegToRad(signedAngle);
+
+      poses.push({
+        x: layout.center.x + Math.cos(radians) * radius + bandOffsetX,
+        y: layout.center.y + Math.sin(radians) * radius * 0.65 + bandOffsetY + 2,
+        angle: signedAngle,
+        depth: 40 + index * 2
+      });
+    });
+
+    return poses;
+  }
+
+  private getSeatForPlayer(layout: TableLayout, state: PublicGameState, playerId: string): { seat: { x: number; y: number }; isViewer: boolean } | null {
+    let topSeatIndex = 0;
+
+    for (const player of state.players) {
+      const isViewer = player.id === state.viewerPlayerId;
+      const seat = isViewer ? layout.viewerSeat : layout.topSeats[topSeatIndex++];
+      if (player.id === playerId) {
+        return { seat, isViewer };
+      }
+    }
+
+    return null;
+  }
+
+  private getSeatVisualScale(layout: TableLayout, player: PublicPlayerState, isViewer: boolean): number {
+    const baseScale = isViewer ? 1 : layout.topSeatScale;
+    if (player.isCurrentTurn) {
+      return baseScale * 1.14;
+    }
+
+    if (player.status === "finished") {
+      return baseScale * 0.82;
+    }
+
+    return baseScale * 0.9;
+  }
+
+  private buildSeatHandBackPoses(seat: { x: number; y: number }, center: { x: number; y: number }, handCount: number): HandBackPose[] {
+    const visibleCount = Math.max(0, Math.min(5, handCount));
+    if (visibleCount === 0) {
+      return [];
+    }
+
+    const dx = center.x - seat.x;
+    const dy = center.y - seat.y;
+    const distance = Math.max(Math.hypot(dx, dy), 1);
+    const dirX = dx / distance;
+    const dirY = dy / distance;
+    const perpX = -dirY;
+    const perpY = dirX;
+    const anchorX = dirX * 54;
+    const anchorY = dirY * 54;
+    const baseAngle = Phaser.Math.RadToDeg(Math.atan2(dirY, dirX)) + 90;
+    const spacing = visibleCount <= 1 ? 0 : 10;
+
+    return Array.from({ length: visibleCount }, (_value, index) => {
+      const normalized = visibleCount > 1 ? index / (visibleCount - 1) - 0.5 : 0;
+      const spreadOffset = normalized * spacing * Math.max(1, visibleCount - 1);
+      return {
+        localX: anchorX + perpX * spreadOffset + dirX * Math.abs(normalized) * 3,
+        localY: anchorY + perpY * spreadOffset + dirY * Math.abs(normalized) * 3,
+        angle: baseAngle + normalized * 12
+      };
+    });
+  }
+
+  private createBackCard(localX: number, localY: number, angle: number): Phaser.GameObjects.Container {
+    const shell = this.add.rectangle(0, 0, 30, 42, toColorNumber(palette.surfaceHigh)).setStrokeStyle(1.1, toColorNumber(palette.outline), 0.48);
+    const inner = this.add.rectangle(0, 0, 24, 36, toColorNumber(palette.surfaceContainer)).setStrokeStyle(1, toColorNumber(palette.outlineVariant), 0.35);
+    const band = this.add.rectangle(0, 0, 12, 26, toColorNumber(palette.primary), 0.22);
+    const mark = applyTextResolution(this.add
+      .text(0, 0, "♢", {
+        fontFamily: "Space Grotesk, sans-serif",
+        fontSize: "10px",
+        color: palette.primary,
+        fontStyle: "bold"
+      })
+      .setOrigin(0.5)
+      .setAlpha(0.65));
+
+    return this.add.container(localX, localY, [shell, inner, band, mark]).setAngle(angle);
+  }
+
+  private async animatePlayedCards(cardIds: string[]): Promise<void> {
+    const state = this.gameState;
+    if (!state || cardIds.length === 0) {
+      return;
+    }
+
+    const movingCards = this.handCards.filter((cardView) => cardIds.includes(cardView.card.id));
+    if (movingCards.length === 0) {
+      return;
+    }
+
+    const layout = computeTableLayout(this.scale.width, this.scale.height, state);
+    const existingKeys = this.displayedPileCards.map((entry) => entry.key);
+    const animationKeys = [...existingKeys, ...movingCards.map((cardView) => `anim-${cardView.card.id}`)];
+    const targetPoses = this.computePilePoses(layout, animationKeys).slice(-movingCards.length);
+    const overlayCards = movingCards.map((cardView, index) => {
+      const clone = new CardView(this, cardView.card, cardView.x, cardView.y);
+      clone.syncPose(cardView.x, cardView.y, cardView.angle, cardView.scaleX, 500 + index);
+      clone.setHitAreaProfile(72, 0);
+      clone.setSelected(true);
+      clone.setAvailabilityState(true, true);
+      return clone;
+    });
+
+    movingCards.forEach((cardView) => {
+      cardView.setVisible(false);
+    });
+
+    await new Promise<void>((resolve) => {
+      let completed = 0;
+
+      overlayCards.forEach((cardView, index) => {
+        const pose = targetPoses[index];
+        this.tweens.add({
+          targets: cardView,
+          x: pose?.x ?? cardView.x,
+          y: pose?.y ?? cardView.y,
+          angle: pose?.angle ?? cardView.angle,
+          scaleX: 1.02,
+          scaleY: 1.02,
+          duration: 340,
+          delay: index * 55,
+          ease: "Cubic.InOut",
+          onStart: () => {
+            cardView.setDepth((pose?.depth ?? 500) + index);
+          },
+          onComplete: () => {
+            completed += 1;
+            if (completed !== overlayCards.length) {
+              return;
+            }
+
+            overlayCards.forEach((overlayCard) => overlayCard.destroy());
+            movingCards.forEach((movingCard) => movingCard.setVisible(true));
+            resolve();
+          }
+        });
+      });
+    });
+  }
+
+  private async animateSeatPlayedCards(previousState: PublicGameState, nextState: PublicGameState): Promise<void> {
+    const currentSet = nextState.pile.currentSet;
+    if (!currentSet || currentSet.byPlayerId === nextState.viewerPlayerId) {
+      return;
+    }
+
+    const previousSetTimestamp = previousState.pile.currentSet?.timestamp ?? null;
+    if (previousSetTimestamp === currentSet.timestamp) {
+      return;
+    }
+
+    const player = previousState.players.find((entry) => entry.id === currentSet.byPlayerId);
+    if (!player) {
+      return;
+    }
+
+    const layout = computeTableLayout(this.scale.width, this.scale.height, previousState);
+    const seatInfo = this.getSeatForPlayer(layout, previousState, currentSet.byPlayerId);
+    if (!seatInfo) {
+      return;
+    }
+
+    const seatScale = this.getSeatVisualScale(layout, player, seatInfo.isViewer);
+    const sourcePoses = this.buildSeatHandBackPoses(seatInfo.seat, layout.center, player.handCount).slice(-currentSet.cards.length);
+    if (sourcePoses.length === 0) {
+      return;
+    }
+
+    const existingKeys = this.displayedPileCards.map((entry) => entry.key);
+    const animationKeys = [...existingKeys, ...currentSet.cards.map((card) => `anim-${currentSet.timestamp}-${card.id}`)];
+    const targetPoses = this.computePilePoses(layout, animationKeys).slice(-currentSet.cards.length);
+    const overlayCards = currentSet.cards.map((card, index) => {
+      const sourcePose = sourcePoses[Math.min(index, sourcePoses.length - 1)];
+      const globalX = seatInfo.seat.x + sourcePose.localX * seatScale;
+      const globalY = seatInfo.seat.y + sourcePose.localY * seatScale;
+      const cardView = new CardView(this, card, globalX, globalY);
+      cardView.syncPose(globalX, globalY, sourcePose.angle, 0.48 * seatScale, 500 + index);
+      cardView.setAvailabilityState(true, false);
+      return cardView;
+    });
+
+    await new Promise<void>((resolve) => {
+      let completed = 0;
+
+      overlayCards.forEach((cardView, index) => {
+        const pose = targetPoses[index];
+        this.tweens.add({
+          targets: cardView,
+          x: pose?.x ?? cardView.x,
+          y: pose?.y ?? cardView.y,
+          angle: pose?.angle ?? cardView.angle,
+          scaleX: 1.02,
+          scaleY: 1.02,
+          duration: 280,
+          delay: index * 45,
+          ease: "Cubic.InOut",
+          onStart: () => {
+            cardView.setDepth((pose?.depth ?? 500) + index);
+          },
+          onComplete: () => {
+            completed += 1;
+            if (completed !== overlayCards.length) {
+              return;
+            }
+
+            overlayCards.forEach((overlayCard) => overlayCard.destroy());
+            resolve();
+          }
+        });
+      });
+    });
   }
 
   private toggleCardSelection(card: Card): void {
@@ -229,6 +518,37 @@ export class GameScene extends Phaser.Scene {
     return selectable;
   }
 
+  private isSelectedPlayValid(state: PublicGameState): boolean {
+    if (state.phase !== "playing" || state.currentTurnPlayerId !== state.viewerPlayerId || this.busy) {
+      return false;
+    }
+
+    if (this.selectedCardIds.size === 0) {
+      return false;
+    }
+
+    const selectedCards = state.viewerHand.filter((card) => this.selectedCardIds.has(card.id));
+    if (selectedCards.length !== this.selectedCardIds.size) {
+      return false;
+    }
+
+    const firstRank = selectedCards[0]?.rank;
+    if (firstRank === undefined || !selectedCards.every((card) => card.rank === firstRank)) {
+      return false;
+    }
+
+    const currentSet = state.pile.currentSet;
+    if (!currentSet) {
+      return true;
+    }
+
+    if (selectedCards.length !== currentSet.count) {
+      return false;
+    }
+
+    return firstRank > currentSet.rank;
+  }
+
   private createButton(label: string, primary: boolean, onTap: () => void): Phaser.GameObjects.Container {
     const button = this.add.container(0, 0);
     const width = primary ? 172 : 132;
@@ -237,14 +557,14 @@ export class GameScene extends Phaser.Scene {
       .ellipse(0, 6, width + 22, height + 18, toColorNumber(palette.primary), primary ? 0.22 : 0)
       .setVisible(primary);
     const background = this.add.graphics();
-    const text = this.add
+    const text = applyTextResolution(this.add
       .text(0, 0, label, {
         fontFamily: "Space Grotesk, sans-serif",
         fontSize: "16px",
         color: primary ? palette.surfaceLowest : palette.text,
         fontStyle: "bold"
       })
-      .setOrigin(0.5);
+      .setOrigin(0.5));
 
     button.add([glow, background, text]);
     button.setSize(width, height);
@@ -267,7 +587,7 @@ export class GameScene extends Phaser.Scene {
 
   private ensureChrome(): void {
     if (!this.requirementText) {
-      this.requirementText = this.add
+      this.requirementText = applyTextResolution(this.add
         .text(0, 0, "", {
           fontFamily: "Manrope, sans-serif",
           fontSize: "15px",
@@ -275,12 +595,12 @@ export class GameScene extends Phaser.Scene {
           backgroundColor: palette.surfaceHigh,
           padding: { x: 12, y: 7 }
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5));
     }
 
     if (!this.statusBanner) {
       const background = this.add.graphics();
-      const label = this.add
+      const label = applyTextResolution(this.add
         .text(0, 0, "", {
           fontFamily: "Manrope, sans-serif",
           fontSize: "14px",
@@ -288,30 +608,58 @@ export class GameScene extends Phaser.Scene {
           fontStyle: "bold",
           align: "center"
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5));
       this.statusBanner = this.add.container(0, 0, [background, label]);
       this.statusBanner.setData("background", background);
       this.statusBanner.setData("label", label);
     }
 
     if (!this.logText) {
-      this.logText = this.add
+      this.logText = applyTextResolution(this.add
         .text(0, 0, "", {
           fontFamily: "Manrope, sans-serif",
-          fontSize: "13px",
+          fontSize: "12px",
           color: palette.mutedText,
-          align: "center",
-          wordWrap: { width: 360 }
+          align: "left",
+          wordWrap: { width: 228 }
         })
-        .setOrigin(0.5);
+        .setOrigin(0, 0));
+    }
+
+    if (!this.debugHelpText) {
+      this.debugHelpText = applyTextResolution(this.add
+        .text(0, 0, "", {
+          fontFamily: "Manrope, sans-serif",
+          fontSize: "11px",
+          color: palette.text,
+          align: "left",
+          wordWrap: { width: 228 }
+        })
+        .setOrigin(0, 0));
     }
 
     if (this.debugMode && !this.debugToggle) {
-      this.debugToggle = this.createButton("Debug Log", false, () => {
-        this.debugLogVisible = !this.debugLogVisible;
+      this.debugToggle = this.createButton("Debug", false, () => {
+        this.debugMenuVisible = !this.debugMenuVisible;
         this.renderState();
       });
       this.add.existing(this.debugToggle);
+    }
+
+    if (this.debugMode && !this.debugMenu && this.logText && this.debugHelpText) {
+      const background = this.add.graphics();
+      const title = applyTextResolution(this.add
+        .text(0, 0, "Debug Menu", {
+          fontFamily: "Space Grotesk, sans-serif",
+          fontSize: "14px",
+          color: palette.primary,
+          fontStyle: "bold"
+        })
+        .setOrigin(0, 0));
+      this.debugMenu = this.add.container(0, 0, [background, title, this.debugHelpText, this.logText]);
+      this.debugMenu.setData("background", background);
+      this.debugMenu.setData("title", title);
+      this.debugMenu.setDepth(260);
     }
 
     if (!this.actionButton) {
@@ -397,11 +745,12 @@ export class GameScene extends Phaser.Scene {
 
     const canAct = state.phase === "playing" && state.currentTurnPlayerId === state.viewerPlayerId && !this.busy;
     const isPassing = this.selectedCardIds.size === 0;
+    const canPlaySelection = this.isSelectedPlayValid(state);
     this.actionButton.setPosition(this.scale.width / 2, layout.actionBarY);
     this.actionButton.setDepth(200);
     this.updateButtonState(
       this.actionButton,
-      canAct,
+      isPassing ? canAct : canPlaySelection,
       isPassing ? "Pass" : "Play Hand"
     );
   }
@@ -437,7 +786,12 @@ export class GameScene extends Phaser.Scene {
     this.updateStatusBanner(`${currentPlayer.name} is thinking`);
     this.botTimer = this.time.delayedCall(850, async () => {
       try {
-        this.gameState = await this.api.stepBotTurn();
+        const previousState = this.gameState;
+        const nextState = await this.api.stepBotTurn();
+        if (previousState) {
+          await this.animateSeatPlayedCards(previousState, nextState);
+        }
+        this.gameState = nextState;
         this.renderState();
         this.scheduleBotTurnIfNeeded();
       } catch (error) {
@@ -447,12 +801,12 @@ export class GameScene extends Phaser.Scene {
   }
 
   private setDebugVisibility(layout: TableLayout): void {
-    if (!this.logText) {
+    if (!this.logText || !this.debugMenu || !this.debugHelpText) {
       return;
     }
 
     if (!this.debugMode) {
-      this.logText.setVisible(false);
+      this.debugMenu.setVisible(false);
       this.debugToggle?.setVisible(false);
       return;
     }
@@ -461,12 +815,41 @@ export class GameScene extends Phaser.Scene {
     this.debugToggle?.setPosition(layout.tableFrame.x + 74, layout.requirementY);
     this.updateButtonState(this.debugToggle, true);
 
-    const visible = this.debugLogVisible;
+    const visible = this.debugMenuVisible;
+    const title = this.debugMenu.getData("title") as Phaser.GameObjects.Text;
+    const background = this.debugMenu.getData("background") as Phaser.GameObjects.Graphics;
+    const panelWidth = 252;
+    const padding = 14;
+    const anchorX = (this.debugToggle?.x ?? (layout.tableFrame.x + 74)) + 96;
+    const anchorY = (this.debugToggle?.y ?? layout.requirementY) + 96;
+    const shortcutsText = [
+      "` : Toggle debug menu",
+      "R : Toggle mock results",
+      "X : Toggle mock exchange",
+      "F : Fast-forward match"
+    ].join("\n");
+
+    this.debugHelpText.setText(shortcutsText);
     this.logText
+      .setText((this.gameState?.log.slice(-5).map((entry) => entry.text).join("\n")) ?? "")
+      .setWordWrapWidth(panelWidth - padding * 2, true);
+
+    const contentHeight = Math.max(138, 68 + this.debugHelpText.height + this.logText.height);
+    title.setPosition(-panelWidth / 2 + padding, -contentHeight / 2 + padding);
+    this.debugHelpText.setPosition(-panelWidth / 2 + padding, -contentHeight / 2 + 38);
+    this.logText.setPosition(-panelWidth / 2 + padding, 52);
+    background.clear();
+    background.fillStyle(toColorNumber(palette.surfaceHigh), 0.96);
+    background.fillRoundedRect(-panelWidth / 2, -contentHeight / 2, panelWidth, contentHeight, 18);
+    background.lineStyle(1.2, toColorNumber(palette.outlineVariant), 0.44);
+    background.strokeRoundedRect(-panelWidth / 2, -contentHeight / 2, panelWidth, contentHeight, 18);
+    background.lineStyle(1, toColorNumber(palette.outlineVariant), 0.28);
+    background.strokeLineShape(new Phaser.Geom.Line(-panelWidth / 2 + padding, 34, panelWidth / 2 - padding, 34));
+
+    this.debugMenu
       .setVisible(visible)
       .setAlpha(visible ? 1 : 0)
-      .setPosition(layout.logBox.x, layout.logBox.y)
-      .setWordWrapWidth(layout.logBox.width - 28, true);
+      .setPosition(anchorX, anchorY);
   }
 
   private drawBackdrop(layout: TableLayout): void {
@@ -489,24 +872,6 @@ export class GameScene extends Phaser.Scene {
 
     this.chromeGraphics.clear();
 
-    if (this.debugMode && this.debugLogVisible) {
-      this.chromeGraphics.fillStyle(toColorNumber(palette.surfaceHigh), 0.9);
-      this.chromeGraphics.fillRoundedRect(
-        layout.logBox.x - layout.logBox.width / 2,
-        layout.logBox.y - layout.logBox.height / 2,
-        layout.logBox.width,
-        layout.logBox.height,
-        18
-      );
-      this.chromeGraphics.lineStyle(1.2, toColorNumber(palette.outlineVariant), 0.32);
-      this.chromeGraphics.strokeRoundedRect(
-        layout.logBox.x - layout.logBox.width / 2,
-        layout.logBox.y - layout.logBox.height / 2,
-        layout.logBox.width,
-        layout.logBox.height,
-        18
-      );
-    }
   }
 
   private renderState(): void {
@@ -543,10 +908,6 @@ export class GameScene extends Phaser.Scene {
 
     this.refreshActionButton(layout, state);
 
-    const logLines = state.log.slice(-3).map((entry) => entry.text).join("\n");
-    this.logText
-      ?.setText(logLines)
-      .setPosition(layout.logBox.x, layout.logBox.y);
     this.setDebugVisibility(layout);
   }
 
@@ -554,10 +915,31 @@ export class GameScene extends Phaser.Scene {
     const currentSet = state.pile.currentSet;
 
     if (!currentSet) {
-      this.displayedPileCards = [];
-      this.lastSeenPileTimestamp = null;
+      if (this.displayedPileCards.length === 0) {
+        this.lastSeenPileTimestamp = null;
+        this.fadingDisplayedPile = false;
+        return;
+      }
+
+      if (this.fadingDisplayedPile) {
+        return;
+      }
+
+      this.fadingDisplayedPile = true;
+      this.clearPileTimer?.remove(false);
+      this.clearPileTimer = this.time.delayedCall(1060, () => {
+        this.displayedPileCards = [];
+        this.lastSeenPileTimestamp = null;
+        this.fadingDisplayedPile = false;
+        this.clearPileTimer = undefined;
+        this.renderState();
+      });
       return;
     }
+
+    this.clearPileTimer?.remove(false);
+    this.clearPileTimer = undefined;
+    this.fadingDisplayedPile = false;
 
     if (this.lastSeenPileTimestamp === currentSet.timestamp) {
       return;
@@ -598,57 +980,40 @@ export class GameScene extends Phaser.Scene {
         const ring = this.add.circle(0, 0, 34).setStrokeStyle(2, toColorNumber(palette.outline), 0.35);
         const halo = this.add.circle(0, 0, 27, Number.parseInt(player.avatarColor.replace("#", ""), 16), 1);
         const badgeBg = this.add.rectangle(0, -52, 82, 18, toColorNumber(palette.surfaceHigh)).setAlpha(0.95);
-        const badgeText = this.add
+        const badgeText = applyTextResolution(this.add
           .text(0, -52, "", {
             fontFamily: "Manrope, sans-serif",
             fontSize: "10px",
             color: palette.text,
             fontStyle: "bold"
           })
-          .setOrigin(0.5);
-        const nameText = this.add
+          .setOrigin(0.5));
+        const handFan = this.add.container(0, 0);
+        const nameText = applyTextResolution(this.add
           .text(0, 48, player.name, {
             fontFamily: "Space Grotesk, sans-serif",
             fontSize: "13px",
             color: palette.text,
             fontStyle: "bold"
           })
-          .setOrigin(0.5);
-        const countBg = this.add.circle(24, -20, 13, toColorNumber(palette.surfaceHigh)).setAlpha(0.98);
-        const countIcon = this.add
-          .text(24, -15, "♢", {
-            fontFamily: "Space Grotesk, sans-serif",
-            fontSize: "8px",
-            color: palette.mutedText,
-            fontStyle: "bold"
-          })
-          .setOrigin(0.5);
-        const cardCountText = this.add
-          .text(24, -24, "", {
-            fontFamily: "Manrope, sans-serif",
-            fontSize: "10px",
-            color: palette.text
-          })
-          .setOrigin(0.5);
-        const statusText = this.add
+          .setOrigin(0.5));
+        const statusText = applyTextResolution(this.add
           .text(0, 86, "", {
             fontFamily: "Manrope, sans-serif",
             fontSize: "11px",
             color: palette.mutedText
           })
-          .setOrigin(0.5);
+          .setOrigin(0.5));
         const container = this.add.container(seat.x, seat.y, [
           badgeBg,
           badgeText,
           ring,
           halo,
+          handFan,
           nameText,
-          countBg,
-          countIcon,
-          cardCountText,
           statusText
         ]);
-        widgets = { container, ring, halo, badgeBg, badgeText, nameText, countBg, countIcon, cardCountText, statusText };
+        widgets = { container, ring, halo, badgeBg, badgeText, nameText, handFan, statusText };
         this.seatWidgets.set(player.id, widgets);
       }
 
@@ -659,20 +1024,25 @@ export class GameScene extends Phaser.Scene {
       const badge = this.describeSeatBadge(player, state.players.length);
       widgets.container.setPosition(seat.x, seat.y);
       widgets.nameText.setText(player.name);
-      widgets.cardCountText.setText(String(player.handCount));
       const status = this.describeStatus(player, false);
       widgets.statusText.setText(status);
       widgets.statusText.setVisible(status.length > 0);
       widgets.badgeText.setText(badge.text);
       widgets.badgeBg.setFillStyle(toColorNumber(badge.fill), badge.alpha);
       widgets.badgeText.setColor(badge.color);
-      widgets.countBg.setStrokeStyle(1, toColorNumber(palette.outlineVariant), 0.32);
-      widgets.countIcon.setColor(palette.mutedText);
-      widgets.cardCountText.setColor(badge.countColor ?? badge.color);
       widgets.halo.setAlpha(player.status === "finished" ? 0.55 : 1);
       widgets.halo.setScale(player.isCurrentTurn ? 1.08 : 1);
       widgets.ring.setStrokeStyle(2.5, toColorNumber(badge.ring), player.isCurrentTurn ? 1 : 0.55);
       widgets.ring.setScale(player.isCurrentTurn ? 1.12 : 1);
+      widgets.handFan.removeAll(true);
+      if (!isViewer && player.handCount > 0) {
+        const handBackPoses = this.buildSeatHandBackPoses(seat, layout.center, player.handCount);
+        handBackPoses.forEach((pose, index) => {
+          const backCard = this.createBackCard(pose.localX, pose.localY, pose.angle);
+          backCard.setAlpha(player.status === "finished" ? 0.28 : 0.92 - index * 0.08);
+          widgets.handFan.add(backCard);
+        });
+      }
       this.animateSeatState(widgets, isViewer ? 1 : layout.topSeatScale, player.isCurrentTurn, player.status === "finished");
       widgets.container.setDepth(player.isCurrentTurn ? 220 : isViewer ? 210 : 20);
     });
@@ -715,57 +1085,49 @@ export class GameScene extends Phaser.Scene {
 
     if (this.displayedPileCards.length > 0) {
       const visibleCards = this.displayedPileCards;
-      const angleSteps = buildAngleSequence(Math.max(0, visibleCards.length - 1), visibleCards.map((entry) => entry.key).join("|"));
-      let runningAngle = 0;
-      let stackBand = 0;
+      const poses = this.computePilePoses(layout, visibleCards.map((entry) => entry.key));
 
       visibleCards.forEach((entry, index) => {
         const { card } = entry;
-        if (index > 0) {
-          const nextStep = angleSteps[index - 1];
-          if (runningAngle + nextStep > 90) {
-            runningAngle = 0;
-            stackBand += 1;
-          } else {
-            runningAngle += nextStep;
-          }
-        }
-
-        const signedAngle = (stackBand % 2 === 0 ? 1 : -1) * runningAngle;
-        const bandOffsetX = stackBand * 10;
-        const bandOffsetY = stackBand * 6;
-        const radius = Math.min(18, 6 + index * 0.7);
-        const radians = Phaser.Math.DegToRad(signedAngle);
-        const cardX = layout.center.x + Math.cos(radians) * radius + bandOffsetX;
-        const cardY = layout.center.y + Math.sin(radians) * radius * 0.65 + bandOffsetY;
-        const cardView = new CardView(this, card, cardX, cardY + 2);
-        cardView.setScale(1.08);
-        cardView.setAngle(signedAngle);
+        const pose = poses[index];
+        const cardView = new CardView(this, card, pose.x, pose.y);
+        cardView.syncPose(pose.x, pose.y, pose.angle, 1.08, pose.depth);
         cardView.setSelected(false);
         cardView.setAvailabilityState(true, false);
-        cardView.setDepth(40 + index * 2);
         children.push(cardView);
       });
     } else {
-      const emptyText = this.add
+      const emptyText = applyTextResolution(this.add
         .text(layout.center.x, layout.center.y - 4, "New Round", {
           fontFamily: "Space Grotesk, sans-serif",
           fontSize: "28px",
           color: palette.primary,
           fontStyle: "bold"
         })
-        .setOrigin(0.5);
-      const helperText = this.add
+        .setOrigin(0.5));
+      const helperText = applyTextResolution(this.add
         .text(layout.center.x, layout.center.y + 34, "Play any valid set to lead.", {
           fontFamily: "Manrope, sans-serif",
           fontSize: "13px",
           color: palette.mutedText
         })
-        .setOrigin(0.5);
+        .setOrigin(0.5));
       children.push(emptyText, helperText);
     }
 
     this.centerGroup = this.add.container(0, 0, children);
+
+    if (this.fadingDisplayedPile && !state.pile.currentSet) {
+      this.centerGroup.setAlpha(1);
+      this.tweens.killTweensOf(this.centerGroup);
+      this.tweens.add({
+        targets: this.centerGroup,
+        alpha: 0,
+        delay: 780,
+        duration: 260,
+        ease: "Quad.In"
+      });
+    }
   }
 
   private renderHand(): void {
@@ -774,8 +1136,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.handCards.forEach((card) => card.destroy());
-    this.handCards = [];
+    const existingCards = new Map(this.handCards.map((card) => [card.card.id, card]));
+    const nextHandCards: CardView[] = [];
 
     const { width, height } = this.scale;
     const layout = computeTableLayout(width, height, state);
@@ -793,18 +1155,32 @@ export class GameScene extends Phaser.Scene {
       const angle = normalized * 34;
       const curveLift = Math.abs(normalized) * 18;
       const y = layout.handY + curveLift - (selected ? 20 : 0);
-      const cardView = new CardView(this, card, startX + spread * index, y);
-      cardView.setScale(baseScale);
-      cardView.setAngle(angle);
-      cardView.setDepth(100 + index + (selected ? 1000 : 0));
+      const x = startX + spread * index;
+      const scale = baseScale * (selected ? 1.06 : 1);
+      const depth = 100 + index + (selected ? 1000 : 0);
+      const existingCard = existingCards.get(card.id);
+      const cardView = existingCard ?? new CardView(this, card, x, y);
+
+      if (existingCard) {
+        existingCards.delete(card.id);
+      } else {
+        cardView.syncPose(x, y, angle, scale, depth);
+      }
+
       cardView.setHitAreaProfile(
         selected ? 72 : index === 0 || index === fanSize - 1 ? Math.max(sharedHitWidth, 40) : sharedHitWidth,
         Phaser.Math.Clamp(Math.sin(Phaser.Math.DegToRad(angle)) * 16, -16, 16)
       );
       cardView.setSelected(selected);
       cardView.setAvailabilityState(selectable, selected);
-      this.handCards.push(cardView);
+      if (existingCard) {
+        cardView.tweenToPose(x, y, angle, scale, depth);
+      }
+      nextHandCards.push(cardView);
     });
+
+    existingCards.forEach((cardView) => cardView.destroy());
+    this.handCards = nextHandCards;
 
     this.refreshActionButton(layout, state);
   }

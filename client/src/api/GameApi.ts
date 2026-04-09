@@ -1,6 +1,6 @@
 import type { GameAction, PublicGameState } from "@president/shared";
 
-const baseUrl = import.meta.env.VITE_SERVER_URL ?? "http://localhost:3001";
+const baseUrl = import.meta.env.VITE_SERVER_URL ?? "http://127.0.0.1:3001";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${baseUrl}${path}`, {
@@ -39,6 +39,12 @@ export class GameApi {
 
   public async stepBotTurn(): Promise<PublicGameState> {
     return request<PublicGameState>("/game/bot-turn", {
+      method: "POST"
+    });
+  }
+
+  public async fastForwardGame(): Promise<PublicGameState> {
+    return request<PublicGameState>("/game/fast-forward", {
       method: "POST"
     });
   }

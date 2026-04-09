@@ -9,10 +9,21 @@ if (!app) {
   throw new Error("Missing app container");
 }
 
-const config: Phaser.Types.Core.GameConfig = {
-  type: Phaser.AUTO,
+function getRendererType(): number {
+  return Phaser.AUTO;
+}
+
+const config = {
+  type: getRendererType(),
   parent: app,
   backgroundColor: "#0f172a",
+  autoRound: true,
+  render: {
+    antialias: true,
+    antialiasGL: true,
+    pixelArt: false,
+    roundPixels: false
+  },
   scale: {
     mode: Phaser.Scale.RESIZE,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -20,7 +31,7 @@ const config: Phaser.Types.Core.GameConfig = {
     height: window.innerHeight
   },
   scene: [GameScene]
-};
+} as Phaser.Types.Core.GameConfig;
 
 let game: Phaser.Game;
 let exchangeOverlaySource: "scene-mock" | "results-flow" | null = null;

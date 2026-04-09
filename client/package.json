@@ -6,9 +6,17 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -p tsconfig.json && vite build",
-    "typecheck": "tsc -p tsconfig.json --noEmit"
+    "build:ngrok": "VITE_SERVER_URL=https://assad.ngrok.dev npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "android:sync": "npx cap sync android",
+    "android:open": "npx cap open android",
+    "android:build:debug": "npm run build && npx cap sync android && (cd android && ./gradlew assembleDebug)",
+    "android:build:ngrok": "npm run build:ngrok && npx cap sync android && (cd android && ./gradlew assembleDebug)"
   },
   "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/cli": "^7.6.1",
+    "@capacitor/core": "^8.3.0",
     "@president/shared": "*",
     "phaser": "^3.90.0"
   },
