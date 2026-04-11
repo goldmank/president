@@ -82,14 +82,15 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _loading = false;
       });
       _scheduleBotTurnIfNeeded();
-    } catch (error) {
+    } catch (error, stackTrace) {
+      _reportError('load_game', error, stackTrace);
       if (!mounted) {
         return;
       }
       setState(() {
         _loading = false;
       });
-      _showBanner('$error');
+      _showBanner(_formatError(error));
     }
   }
 
@@ -108,7 +109,32 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
-  void _setGameState(PublicGameStateModel next) {
+  String _formatError(Object error) {
+    final text = error.toString();
+    return text.startsWith('Exception: ') ? text.substring(11) : text;
+  }
+
+  void _reportError(String context, Object error, StackTrace stackTrace) {
+    debugPrint('[$context] ${_formatError(error)}');
+    debugPrintStack(stackTrace: stackTrace);
+  }
+
+  Future<void> _setGameState(PublicGameStateModel next) async {
+    final previous = _state;
+    final shouldHoldRoundEnd =
+        previous != null &&
+        previous.phase == GamePhase.playing &&
+        previous.pile.history.isNotEmpty &&
+        next.phase == GamePhase.playing &&
+        next.pile.history.isEmpty;
+
+    if (shouldHoldRoundEnd) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      if (!mounted) {
+        return;
+      }
+    }
+
     final lingeringFlights = List<_CardFlight>.from(_cardFlights);
     setState(() {
       _cardFlights.clear();
@@ -178,9 +204,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         setState(() {
           _banner = null;
         });
-        _setGameState(next);
-      } catch (error) {
-        _showBanner('$error');
+        await _setGameState(next);
+      } catch (error, stackTrace) {
+        _reportError('bot_turn', error, stackTrace);
+        _showBanner(_formatError(error));
       }
     });
   }
@@ -317,8 +344,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         return;
       }
 
-      _setGameState(next);
-    } catch (error) {
+      await _setGameState(next);
+    } catch (error, stackTrace) {
+      _reportError('submit_action', error, stackTrace);
       if (!mounted) {
         return;
       }
@@ -327,7 +355,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _animatingViewerCardIds.clear();
         _clearFlights();
       });
-      _showBanner('$error');
+      _showBanner(_formatError(error));
     }
   }
 
