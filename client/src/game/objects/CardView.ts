@@ -1,15 +1,21 @@
 import Phaser from "phaser";
 import type { Card } from "@president/shared";
-import { CARD_HEIGHT, CARD_WIDTH, ensureCardTexture, type CardVisualState } from "../cardTextures";
+import { getCardDisplaySize, getCardTextureKey } from "../cardTextures";
+import { palette, toColorNumber } from "../theme";
 
 export class CardView extends Phaser.GameObjects.Container {
   public readonly card: Card;
   private readonly face: Phaser.GameObjects.Image;
+  private readonly selectedFrame: Phaser.GameObjects.Graphics;
+  private readonly disabledVeil: Phaser.GameObjects.Graphics;
+  private readonly disabledFrame: Phaser.GameObjects.Graphics;
+  private readonly cardWidth: number;
+  private readonly cardHeight: number;
   private readonly hitPolygon = new Phaser.Geom.Polygon([
-    -36, -52,
-    36, -52,
-    36, 52,
-    -36, 52
+    -36, -51,
+    36, -51,
+    36, 51,
+    -36, 51
   ]);
   private interactiveForSelection = true;
   private poseTween?: Phaser.Tweens.Tween;
@@ -17,11 +23,48 @@ export class CardView extends Phaser.GameObjects.Container {
   public constructor(scene: Phaser.Scene, card: Card, x: number, y: number) {
     super(scene, x, y);
     this.card = card;
-    this.face = scene.add.image(0, 0, ensureCardTexture(scene, card, "normal"));
-    this.face.setDisplaySize(CARD_WIDTH, CARD_HEIGHT);
-    this.add(this.face);
-    this.setSize(CARD_WIDTH, CARD_HEIGHT);
+    const { width, height } = getCardDisplaySize();
+    this.cardWidth = width;
+    this.cardHeight = height;
+    this.face = scene.add.image(0, 0, getCardTextureKey(scene, card));
+    this.face.setDisplaySize(this.cardWidth, this.cardHeight);
+    this.selectedFrame = scene.add.graphics().setVisible(false);
+    this.disabledVeil = scene.add.graphics().setVisible(false);
+    this.disabledFrame = scene.add.graphics().setVisible(false);
+    this.redrawSelectedFrame();
+    this.redrawDisabledState();
+    this.add([this.face, this.disabledVeil, this.disabledFrame, this.selectedFrame]);
+    this.setSize(this.cardWidth, this.cardHeight);
     scene.add.existing(this);
+  }
+
+  private redrawSelectedFrame(): void {
+    const inset = 3;
+    this.selectedFrame.clear();
+    this.selectedFrame.lineStyle(2, toColorNumber(palette.primary), 1);
+    this.selectedFrame.strokeRoundedRect(
+      -this.cardWidth / 2 + inset,
+      -this.cardHeight / 2 + inset,
+      this.cardWidth - inset * 2,
+      this.cardHeight - inset * 2,
+      8
+    );
+  }
+
+  private redrawDisabledState(): void {
+    const inset = 2;
+    this.disabledVeil.clear();
+    this.disabledVeil.fillStyle(toColorNumber(palette.surfaceContainer), 0.34);
+    this.disabledVeil.fillRoundedRect(-this.cardWidth / 2, -this.cardHeight / 2, this.cardWidth, this.cardHeight, 8);
+    this.disabledFrame.clear();
+    this.disabledFrame.lineStyle(2, toColorNumber(palette.outline), 0.95);
+    this.disabledFrame.strokeRoundedRect(
+      -this.cardWidth / 2 + inset,
+      -this.cardHeight / 2 + inset,
+      this.cardWidth - inset * 2,
+      this.cardHeight - inset * 2,
+      8
+    );
   }
 
   public setSelected(selected: boolean): void {
@@ -59,21 +102,25 @@ export class CardView extends Phaser.GameObjects.Container {
     const halfWidth = width / 2;
     this.hitPolygon.setTo([
       -halfWidth + slant,
-      -52,
+      -this.cardHeight / 2,
       halfWidth + slant,
-      -52,
+      -this.cardHeight / 2,
       halfWidth - slant,
-      52,
+      this.cardHeight / 2,
       -halfWidth - slant,
-      52
+      this.cardHeight / 2
     ]);
   }
 
   public setAvailabilityState(selectable: boolean, selected: boolean): void {
     this.interactiveForSelection = selectable || selected;
-    const state: CardVisualState = !selectable && !selected ? "disabled" : selected ? "selected" : "normal";
-    this.face.setTexture(ensureCardTexture(this.scene, this.card, state));
-    this.face.setDisplaySize(CARD_WIDTH, CARD_HEIGHT);
+    const disabled = !selectable && !selected;
+    this.face.clearTint();
+    this.face.setDisplaySize(this.cardWidth, this.cardHeight);
+    this.selectedFrame.setVisible(selected);
+    this.disabledVeil.setVisible(disabled);
+    this.disabledFrame.setVisible(disabled);
+    this.face.setTint(disabled ? toColorNumber(palette.outline) : 0xffffff);
   }
 
   public containsScreenPoint(x: number, y: number): boolean {

@@ -2,6 +2,7 @@ import Phaser from "phaser";
 import type { Card, PublicGameState, PublicPlayerState } from "@president/shared";
 import { GameApi } from "../../api/GameApi";
 import { installDebugHooks } from "../debugHooks";
+import { preloadCardTextures } from "../cardTextures";
 import { computeTableLayout, type TableLayout } from "../layout";
 import { CardView } from "../objects/CardView";
 import { buildMockResultsData, buildResultsData } from "../../results/resultsOverlay";
@@ -92,6 +93,10 @@ export class GameScene extends Phaser.Scene {
     super("game");
   }
 
+  public preload(): void {
+    preloadCardTextures(this);
+  }
+
   public async create(): Promise<void> {
     this.cameras.main.setBackgroundColor(palette.background);
     this.backdrop = this.add.graphics();
@@ -99,10 +104,12 @@ export class GameScene extends Phaser.Scene {
 
     installDebugHooks(() => this.gameState, () => this.renderState());
 
-    this.scale.on("resize", () => this.renderState());
+    this.scale.on("resize", () => {
+      this.renderState();
+    });
     this.input.on("pointerup", (pointer: Phaser.Input.Pointer) => {
-      const pointerX = pointer.x;
-      const pointerY = pointer.y;
+      const pointerX = pointer.worldX;
+      const pointerY = pointer.worldY;
 
       if (this.tryTriggerButton(this.actionButton, pointerX, pointerY) || this.tryTriggerButton(this.debugToggle, pointerX, pointerY)) {
         return;
@@ -161,6 +168,13 @@ export class GameScene extends Phaser.Scene {
 
   public getCurrentState(): PublicGameState | null {
     return this.gameState;
+  }
+
+  private getViewportSize(): { width: number; height: number } {
+    return {
+      width: this.scale.width,
+      height: this.scale.height
+    };
   }
 
   private async loadNewGame(): Promise<void> {
@@ -338,7 +352,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const layout = computeTableLayout(this.scale.width, this.scale.height, state);
+    const viewport = this.getViewportSize();
+    const layout = computeTableLayout(viewport.width, viewport.height, state);
     const existingKeys = this.displayedPileCards.map((entry) => entry.key);
     const animationKeys = [...existingKeys, ...movingCards.map((cardView) => `anim-${cardView.card.id}`)];
     const targetPoses = this.computePilePoses(layout, animationKeys).slice(-movingCards.length);
@@ -404,7 +419,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const layout = computeTableLayout(this.scale.width, this.scale.height, previousState);
+    const viewport = this.getViewportSize();
+    const layout = computeTableLayout(viewport.width, viewport.height, previousState);
     const seatInfo = this.getSeatForPlayer(layout, previousState, currentSet.byPlayerId);
     if (!seatInfo) {
       return;
@@ -746,7 +762,8 @@ export class GameScene extends Phaser.Scene {
     const canAct = state.phase === "playing" && state.currentTurnPlayerId === state.viewerPlayerId && !this.busy;
     const isPassing = this.selectedCardIds.size === 0;
     const canPlaySelection = this.isSelectedPlayValid(state);
-    this.actionButton.setPosition(this.scale.width / 2, layout.actionBarY);
+    const viewport = this.getViewportSize();
+    this.actionButton.setPosition(viewport.width / 2, layout.actionBarY);
     this.actionButton.setDepth(200);
     this.updateButtonState(
       this.actionButton,
@@ -857,7 +874,8 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    const { width, height } = this.scale;
+    const viewport = this.getViewportSize();
+    const { width, height } = viewport;
     const table = layout.tableFrame;
 
     this.backdrop.clear();
@@ -886,8 +904,9 @@ export class GameScene extends Phaser.Scene {
 
     this.syncDisplayedPile(state);
 
-    const { width } = this.scale;
-    const layout = computeTableLayout(this.scale.width, this.scale.height, state);
+    const viewport = this.getViewportSize();
+    const layout = computeTableLayout(viewport.width, viewport.height, state);
+
     this.drawBackdrop(layout);
     this.ensureChrome();
 
@@ -900,7 +919,7 @@ export class GameScene extends Phaser.Scene {
         : currentPlayer?.kind === "bot"
           ? `${currentPlayer.name} is thinking`
           : "";
-    this.updateStatusBanner(statusText, width / 2, layout.statusY);
+    this.updateStatusBanner(statusText, viewport.width / 2, layout.statusY);
 
     this.renderPlayers(layout, state);
     this.renderCenter(layout, state);
@@ -1139,11 +1158,11 @@ export class GameScene extends Phaser.Scene {
     const existingCards = new Map(this.handCards.map((card) => [card.card.id, card]));
     const nextHandCards: CardView[] = [];
 
-    const { width, height } = this.scale;
-    const layout = computeTableLayout(width, height, state);
+    const viewport = this.getViewportSize();
+    const layout = computeTableLayout(viewport.width, viewport.height, state);
     const fanSize = state.viewerHand.length;
     const spread = fanSize > 1 ? Math.min(layout.handSpread, (layout.trayWidth - 120) / (fanSize - 1)) : 0;
-    const startX = width / 2 - (spread * Math.max(0, fanSize - 1)) / 2;
+    const startX = viewport.width / 2 - (spread * Math.max(0, fanSize - 1)) / 2;
     const baseScale = layout.isTablet ? 1.06 : 0.96;
     const sharedHitWidth = fanSize <= 1 ? 72 : Math.max(24, Math.min(46, spread + 8));
     const selectableCardIds = this.getSelectableCardIds(state);
