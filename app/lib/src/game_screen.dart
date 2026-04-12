@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import 'analytics_service.dart';
 import 'card_asset.dart';
 import 'game_api.dart';
 import 'game_overlays.dart';
@@ -19,6 +20,7 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   final GameApi _api = GameApi();
+  final AnalyticsService _analytics = AnalyticsService.instance;
   final Set<String> _selectedCardIds = <String>{};
   final Set<String> _animatingViewerCardIds = <String>{};
   final List<_CardFlight> _cardFlights = <_CardFlight>[];
@@ -82,6 +84,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _state = state;
         _loading = false;
       });
+      unawaited(_analytics.logGameStarted(state));
       _scheduleBotTurnIfNeeded();
     } catch (error, stackTrace) {
       _reportError('load_game', error, stackTrace);
@@ -118,6 +121,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   void _reportError(String context, Object error, StackTrace stackTrace) {
     debugPrint('[$context] ${_formatError(error)}');
     debugPrintStack(stackTrace: stackTrace);
+    unawaited(_analytics.logGameError(context, error, state: _state));
   }
 
   Future<void> _setGameState(PublicGameStateModel next) async {
@@ -152,6 +156,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     for (final flight in lingeringFlights) {
       flight.controller.dispose();
     }
+    if (previous != null &&
+        previous.phase != GamePhase.finished &&
+        next.phase == GamePhase.finished) {
+      unawaited(_analytics.logGameFinished(previous, next));
+      unawaited(_analytics.logRoleProgressionReady(previous, next));
+    }
     _scheduleBotTurnIfNeeded();
   }
 
@@ -172,10 +182,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (currentPlayer.kind != PlayerKind.bot || _busy) {
       return;
     }
-
-    setState(() {
-      _banner = '${currentPlayer.name} is thinking';
-    });
 
     _botTimer = Timer(const Duration(milliseconds: 850), () async {
       final previous = _state;
@@ -201,10 +207,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         if (!mounted) {
           return;
         }
-
-        setState(() {
-          _banner = null;
-        });
         await _setGameState(next);
       } catch (error, stackTrace) {
         _reportError('bot_turn', error, stackTrace);
@@ -621,6 +623,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             color: presidentBackground.withValues(alpha: 0.58),
           ),
           child: SafeArea(
+            minimum: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             child: _loading
                 ? const Center(
                     child: CircularProgressIndicator(color: presidentPrimary),
@@ -629,7 +632,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 ? _ErrorState(onRetry: _loadGame)
                 : LayoutBuilder(
                     builder: (context, constraints) {
-                      return _buildGame(context, constraints.biggest, _state!);
+                      final viewPadding = MediaQuery.viewPaddingOf(context);
+                      final layoutInsets = EdgeInsets.fromLTRB(
+                        math.max(viewPadding.left, 16),
+                        math.max(viewPadding.top, 12),
+                        math.max(viewPadding.right, 16),
+                        math.max(viewPadding.bottom, 16),
+                      );
+                      return _buildGame(
+                        context,
+                        constraints.biggest,
+                        _state!,
+                        layoutInsets,
+                      );
                     },
                   ),
           ),
@@ -642,11 +657,35 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     BuildContext context,
     Size size,
     PublicGameStateModel state,
+    EdgeInsets layoutInsets,
   ) {
-    final tableCenter = Offset(size.width / 2, size.height * 0.33);
-    final seatRadius = math.min(size.width * 0.39, size.height * 0.24);
-    final handRect = Rect.fromLTWH(0, size.height - 184, size.width, 170);
-    final buttonCenter = Offset(size.width / 2, handRect.top - 50);
+    const layoutShiftY = 18.0;
+    const handBottomGap = 44.0;
+    const buttonLift = 84.0;
+    final compactHeight = size.height < 760;
+    final handHeight = compactHeight ? 156.0 : 170.0;
+    final topInsetBias = (layoutInsets.top - 12) * 0.22;
+    final bottomInsetBias = (layoutInsets.bottom - 16) * 0.18;
+    final tableCenterY = _clampDouble(
+      size.height * (compactHeight ? 0.345 : 0.33) -
+          layoutShiftY +
+          topInsetBias -
+          bottomInsetBias,
+      132,
+      size.height - handHeight - 214,
+    );
+    final tableCenter = Offset(size.width / 2, tableCenterY);
+    final seatRadius = math.min(
+      size.width * 0.39,
+      size.height * (compactHeight ? 0.215 : 0.24),
+    );
+    final handTop = _clampDouble(
+      size.height - handHeight - handBottomGap,
+      tableCenterY + 126,
+      size.height - handHeight - 12,
+    );
+    final handRect = Rect.fromLTWH(0, handTop, size.width, handHeight);
+    final buttonCenter = Offset(size.width / 2, handRect.top - buttonLift);
     final layout = _LayoutSnapshot(
       size: size,
       tableCenter: tableCenter,
@@ -992,16 +1031,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final metrics = _viewerHandMetrics(layout, visibleHand.length);
     final order = List<int>.generate(visibleHand.length, (index) => index)
       ..sort((left, right) {
-        final leftSelected = _selectedCardIds.contains(
-          visibleHand[left].id,
-        );
-        final rightSelected = _selectedCardIds.contains(
-          visibleHand[right].id,
-        );
-        if (leftSelected == rightSelected) {
-          return left.compareTo(right);
+        final leftSelected = _selectedCardIds.contains(visibleHand[left].id);
+        final rightSelected = _selectedCardIds.contains(visibleHand[right].id);
+        if (leftSelected != rightSelected) {
+          return leftSelected ? 1 : -1;
         }
-        return leftSelected ? 1 : -1;
+
+        final leftRow = _viewerCardRow(metrics, left);
+        final rightRow = _viewerCardRow(metrics, right);
+        if (leftRow != rightRow) {
+          return leftRow.compareTo(rightRow);
+        }
+
+        final leftColumn = _viewerCardColumn(metrics, left);
+        final rightColumn = _viewerCardColumn(metrics, right);
+        if (leftColumn != rightColumn) {
+          return leftColumn.compareTo(rightColumn);
+        }
+        return left.compareTo(right);
       });
 
     return Positioned(
@@ -1019,6 +1066,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 final isSelected = _selectedCardIds.contains(card.id);
                 final selectable =
                     selectableIds.contains(card.id) || isSelected;
+                final row = _viewerCardRow(metrics, index);
+                final column = _viewerCardColumn(metrics, index);
+                final rowCount =
+                    row == 1 ? metrics.frontCount : metrics.backCount;
+                final angle = _viewerCardAngle(column, rowCount);
+                final selectionNudge = isSelected
+                    ? (angle <= 0 ? -0.03 : 0.03)
+                    : 0.0;
                 final position = _viewerCardPosition(
                   layout,
                   metrics,
@@ -1036,10 +1091,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                     onTap: _isViewerTurn ? () => _toggleCard(card) : null,
                     child: AnimatedRotation(
                       turns:
-                          (_viewerCardAngle(index, visibleHand.length) +
-                              (isSelected
-                                  ? (index.isEven ? -0.03 : 0.03)
-                                  : 0)) /
+                          (angle + selectionNudge) /
                           (2 * math.pi),
                       duration: const Duration(milliseconds: 220),
                       curve: Curves.easeOutBack,
@@ -1396,11 +1448,17 @@ class _HandMetrics {
     required this.startX,
     required this.spacing,
     required this.cardTop,
+    required this.frontCount,
+    required this.backCount,
+    required this.rowGap,
   });
 
   final double startX;
   final double spacing;
   final double cardTop;
+  final int frontCount;
+  final int backCount;
+  final double rowGap;
 }
 
 class _FlightSpec {
@@ -1446,11 +1504,19 @@ class _CardFlight {
 }
 
 _HandMetrics _viewerHandMetrics(_LayoutSnapshot layout, int count) {
+  final useTwoRows = count >= 10;
+  final backCount = useTwoRows ? count ~/ 2 : 0;
+  final frontCount = useTwoRows ? count - backCount : count;
+  final columns = math.max(frontCount, backCount);
+
   if (count <= 1) {
     return _HandMetrics(
       startX: (layout.handRect.width - kCardSize.width) / 2,
       spacing: 0,
-      cardTop: 34,
+      cardTop: 26,
+      frontCount: 1,
+      backCount: 0,
+      rowGap: 38,
     );
   }
 
@@ -1458,10 +1524,19 @@ _HandMetrics _viewerHandMetrics(_LayoutSnapshot layout, int count) {
     24.0,
     layout.handRect.width - kCardSize.width - 40,
   );
-  final spacing = (available / (count - 1)).clamp(18.0, 28.0).toDouble();
-  final totalWidth = kCardSize.width + spacing * (count - 1);
+  final spacing = (available / math.max(1, columns - 1))
+      .clamp(20.0, 34.0)
+      .toDouble();
+  final totalWidth = kCardSize.width + spacing * (columns - 1);
   final startX = (layout.handRect.width - totalWidth) / 2;
-  return _HandMetrics(startX: startX, spacing: spacing, cardTop: 34);
+  return _HandMetrics(
+    startX: startX,
+    spacing: spacing,
+    cardTop: 16,
+    frontCount: frontCount,
+    backCount: backCount,
+    rowGap: 40,
+  );
 }
 
 Offset _viewerCardPosition(
@@ -1471,10 +1546,48 @@ Offset _viewerCardPosition(
   int count,
   bool isSelected,
 ) {
-  final normalized = count <= 1 ? 0.0 : ((index / (count - 1)) * 2) - 1;
+  final row = _viewerCardRow(metrics, index);
+  final column = _viewerCardColumn(metrics, index);
+  final rowCount = row == 1 ? metrics.frontCount : metrics.backCount;
+  final normalized = rowCount <= 1
+      ? 0.0
+      : ((column / (rowCount - 1)) * 2) - 1;
   final arc = math.pow(normalized.abs(), 1.45).toDouble();
-  final top = metrics.cardTop + arc * 28 - (isSelected ? 34 : 0);
-  return Offset(metrics.startX + metrics.spacing * index, top);
+  final baseTop =
+      metrics.cardTop + (row == 0 ? 0 : metrics.rowGap) + arc * 24;
+  final top = baseTop - (isSelected ? 36 : 0);
+  final x = _viewerRowStartX(layout, metrics, rowCount) +
+      metrics.spacing * column;
+  return Offset(x, top);
+}
+
+int _viewerCardRow(_HandMetrics metrics, int index) {
+  if (metrics.backCount == 0) {
+    return 1;
+  }
+  return index < metrics.frontCount ? 1 : 0;
+}
+
+int _viewerCardColumn(_HandMetrics metrics, int index) {
+  if (metrics.backCount == 0) {
+    return index;
+  }
+  if (index < metrics.frontCount) {
+    return index;
+  }
+  return index - metrics.frontCount;
+}
+
+double _viewerRowStartX(
+  _LayoutSnapshot layout,
+  _HandMetrics metrics,
+  int rowCount,
+) {
+  if (rowCount <= 1) {
+    return (layout.handRect.width - kCardSize.width) / 2;
+  }
+  final totalWidth = kCardSize.width + metrics.spacing * (rowCount - 1);
+  return (layout.handRect.width - totalWidth) / 2;
 }
 
 Offset _viewerCardCenter(
@@ -1495,6 +1608,16 @@ Offset _viewerCardCenter(
     layout.handRect.left + position.dx + kCardSize.width / 2,
     layout.handRect.top + position.dy + kCardSize.height / 2,
   );
+}
+
+double _clampDouble(double value, double min, double max) {
+  if (value < min) {
+    return min;
+  }
+  if (value > max) {
+    return max;
+  }
+  return value;
 }
 
 double _viewerCardAngle(int index, int count) {
