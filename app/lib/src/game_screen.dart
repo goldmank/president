@@ -935,30 +935,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (history.isEmpty) {
       return Positioned(
         left: layout.tableCenter.dx - 110,
-        top: layout.tableCenter.dy - 64,
+        top: layout.tableCenter.dy - 74,
         child: SizedBox(
           width: 220,
           child: Column(
             children: <Widget>[
-              Container(
-                width: 62,
-                height: 86,
-                decoration: BoxDecoration(
-                  color: presidentSurfaceHigh.withValues(alpha: 0.72),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: presidentOutlineVariant.withValues(alpha: 0.9),
-                  ),
-                ),
-                child: Icon(
-                  Icons.style_rounded,
-                  size: 32,
-                  color: presidentOutline,
-                ),
+              Icon(
+                Icons.style_rounded,
+                size: 72,
+                color: presidentOutline,
               ),
               const SizedBox(height: 12),
               Text(
-                'Play any valid set to lead',
+                'Play any valid set\nto lead',
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
@@ -1409,18 +1398,20 @@ class _TableGlowPainter extends CustomPainter {
     final glow = Paint()
       ..shader = RadialGradient(
         colors: <Color>[
-          presidentPrimary.withValues(alpha: 0.14),
-          presidentPrimary.withValues(alpha: 0.05),
+          presidentPrimary.withValues(alpha: 0.26),
+          presidentPrimary.withValues(alpha: 0.12),
+          presidentPrimary.withValues(alpha: 0.04),
           Colors.transparent,
         ],
-      ).createShader(Rect.fromCircle(center: center, radius: radius * 1.32));
+        stops: const <double>[0.0, 0.45, 0.78, 1.0],
+      ).createShader(Rect.fromCircle(center: center, radius: radius * 1.42));
 
     final ring = Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..color = presidentOutlineVariant.withValues(alpha: 0.22);
 
-    canvas.drawCircle(center, radius * 1.08, glow);
+    canvas.drawCircle(center, radius * 1.16, glow);
     canvas.drawCircle(center, radius, ring);
     canvas.drawCircle(
       center,
