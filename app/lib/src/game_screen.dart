@@ -935,20 +935,28 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (history.isEmpty) {
       return Positioned(
         left: layout.tableCenter.dx - 110,
-        top: layout.tableCenter.dy - 54,
+        top: layout.tableCenter.dy - 64,
         child: SizedBox(
           width: 220,
           child: Column(
             children: <Widget>[
-              Text(
-                'New Round',
-                textAlign: TextAlign.center,
-                style: Theme.of(context).textTheme.headlineMedium?.copyWith(
-                  color: presidentPrimary,
-                  fontWeight: FontWeight.w900,
+              Container(
+                width: 62,
+                height: 86,
+                decoration: BoxDecoration(
+                  color: presidentSurfaceHigh.withValues(alpha: 0.72),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: presidentOutlineVariant.withValues(alpha: 0.9),
+                  ),
+                ),
+                child: Icon(
+                  Icons.style_rounded,
+                  size: 32,
+                  color: presidentOutline,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 12),
               Text(
                 'Play any valid set to lead',
                 textAlign: TextAlign.center,
