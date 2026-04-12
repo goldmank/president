@@ -1,29 +1,14 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
 
 class GameApi {
   GameApi({http.Client? client}) : _client = client ?? http.Client();
-
-  static const String _configuredBaseUrl = String.fromEnvironment(
-    'SERVER_URL',
-    defaultValue: '',
-  );
+  static const String _baseUrl = 'https://assad.ngrok.dev';
 
   final http.Client _client;
-
-  String get _baseUrl {
-    if (_configuredBaseUrl.isNotEmpty) {
-      return _configuredBaseUrl;
-    }
-
-    return defaultTargetPlatform == TargetPlatform.android
-        ? 'http://10.0.2.2:3001'
-        : 'http://127.0.0.1:3001';
-  }
 
   Uri _uri(String path) => Uri.parse('$_baseUrl$path');
 

@@ -23,6 +23,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   final AnalyticsService _analytics = AnalyticsService.instance;
   final Set<String> _selectedCardIds = <String>{};
   final Set<String> _animatingViewerCardIds = <String>{};
+  final Map<String, bool> _passBubbleVisible = <String, bool>{};
+  final Map<String, Timer> _passBubbleTimers = <String, Timer>{};
   final List<_CardFlight> _cardFlights = <_CardFlight>[];
 
   PublicGameStateModel? _state;
@@ -46,6 +48,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   void dispose() {
     _bannerTimer?.cancel();
     _botTimer?.cancel();
+    for (final timer in _passBubbleTimers.values) {
+      timer.cancel();
+    }
     for (final flight in _cardFlights) {
       flight.controller.dispose();
     }
@@ -58,6 +63,33 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     for (final flight in lingeringFlights) {
       flight.controller.dispose();
     }
+  }
+
+  void _showPassBubble(String playerId) {
+    _passBubbleTimers.remove(playerId)?.cancel();
+    setState(() {
+      _passBubbleVisible[playerId] = true;
+    });
+    _passBubbleTimers[playerId] = Timer(const Duration(seconds: 1), () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _passBubbleVisible[playerId] = false;
+      });
+      _passBubbleTimers[playerId] = Timer(
+        const Duration(milliseconds: 240),
+        () {
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _passBubbleVisible.remove(playerId);
+          });
+          _passBubbleTimers.remove(playerId);
+        },
+      );
+    });
   }
 
   Future<void> _loadGame() async {
@@ -155,6 +187,21 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
     for (final flight in lingeringFlights) {
       flight.controller.dispose();
+    }
+    if (previous != null) {
+      for (final player in next.players) {
+        if (player.id == next.viewerPlayerId) {
+          continue;
+        }
+        final before = previous.players.firstWhere(
+          (entry) => entry.id == player.id,
+          orElse: () => player,
+        );
+        if (before.status != PlayerStatus.passed &&
+            player.status == PlayerStatus.passed) {
+          _showPassBubble(player.id);
+        }
+      }
     }
     if (previous != null &&
         previous.phase != GamePhase.finished &&
@@ -663,6 +710,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     const handBottomGap = 44.0;
     const buttonLift = 84.0;
     final compactHeight = size.height < 760;
+    final uiScale = size.width <= 380 ? 0.92 : 1.0;
     final handHeight = compactHeight ? 156.0 : 170.0;
     final topInsetBias = (layoutInsets.top - 12) * 0.22;
     final bottomInsetBias = (layoutInsets.bottom - 16) * 0.18;
@@ -688,6 +736,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final buttonCenter = Offset(size.width / 2, handRect.top - buttonLift);
     final layout = _LayoutSnapshot(
       size: size,
+      uiScale: uiScale,
       tableCenter: tableCenter,
       seatRadius: seatRadius,
       handRect: handRect,
@@ -756,12 +805,13 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           _buildPlayerSeat(context, state, state.players[index], index, layout),
         _buildCenterPile(context, state, layout),
         Positioned(
-          left: buttonCenter.dx - 100,
-          top: buttonCenter.dy - 24,
-          width: 200,
+          left: buttonCenter.dx - (100 * layout.uiScale),
+          top: buttonCenter.dy + 2,
+          width: 200 * layout.uiScale,
           child: _PrimaryActionButton(
             enabled: buttonEnabled,
             label: _selectedCardIds.isEmpty ? 'PASS' : 'PLAY HAND',
+            scale: layout.uiScale,
             onPressed: buttonEnabled ? _submitAction : null,
           ),
         ),
@@ -813,8 +863,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final isFinished = player.status == PlayerStatus.finished;
     final scale = isActive ? 1.08 : (isViewer ? 0.98 : 0.9);
     final opacity = isActive ? 1.0 : (isFinished ? 0.34 : 0.62);
-    final widgetWidth = isViewer ? 124.0 : 112.0;
-    final widgetHeight = isViewer ? 142.0 : 154.0;
+    final widgetWidth = (isViewer ? 124.0 : 112.0) * layout.uiScale;
+    final widgetHeight = (isViewer ? 142.0 : 154.0) * layout.uiScale;
 
     return Positioned(
       left: center.dx - widgetWidth / 2,
@@ -849,8 +899,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                     ),
                     child: Text(
                       role.toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 9,
+                      style: TextStyle(
+                        fontSize: 9 * layout.uiScale,
                         color: presidentText,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 0.9,
@@ -859,8 +909,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   ),
                   const SizedBox(height: 8),
                   Container(
-                    width: isViewer ? 74 : 68,
-                    height: isViewer ? 74 : 68,
+                    width: (isViewer ? 74.0 : 68.0) * layout.uiScale,
+                    height: (isViewer ? 74.0 : 68.0) * layout.uiScale,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       border: Border.all(
@@ -904,7 +954,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: presidentText,
-                        fontSize: isViewer ? 13 : 12,
+                        fontSize: (isViewer ? 13.0 : 12.0) * layout.uiScale,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -914,6 +964,44 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                     _OpponentFan(
                       count: player.handCount,
                       directionAngle: angle + math.pi,
+                    ),
+                    AnimatedOpacity(
+                      opacity: _passBubbleVisible[player.id] == true ? 1 : 0,
+                      duration: const Duration(milliseconds: 240),
+                      curve: Curves.easeOutCubic,
+                      child: IgnorePointer(
+                        child: Padding(
+                          padding: const EdgeInsets.only(top: 8),
+                          child: Container(
+                            padding: EdgeInsets.symmetric(
+                              horizontal: 10 * layout.uiScale,
+                              vertical: 4 * layout.uiScale,
+                            ),
+                            decoration: BoxDecoration(
+                              color: presidentPrimary,
+                              borderRadius: BorderRadius.circular(999),
+                              boxShadow: <BoxShadow>[
+                                BoxShadow(
+                                  color: presidentPrimary.withValues(
+                                    alpha: 0.22,
+                                  ),
+                                  blurRadius: 12,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              'PASS',
+                              style: TextStyle(
+                                color: Colors.black,
+                                fontSize: 10 * layout.uiScale,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.0,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
                     ),
                   ],
                 ],
@@ -992,12 +1080,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                       left:
                           center.dx -
                           layout.tableCenter.dx -
-                          (kCardSize.width * 1.14) / 2 +
+                          (kCardSize.width * (1.14 * layout.uiScale)) / 2 +
                           96,
                       top:
                           center.dy -
                           layout.tableCenter.dy -
-                          (kCardSize.height * 1.14) / 2 +
+                          (kCardSize.height * (1.14 * layout.uiScale)) / 2 +
                           78,
                       child: Transform.rotate(
                         angle: _pileCardAngle(
@@ -1005,7 +1093,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                           setIndex * 10 + cardIndex,
                           tight: isFirstSetOfRound,
                         ),
-                        child: _GameCard(card: card, scale: 1.14),
+                        child: _GameCard(
+                          card: card,
+                          scale: 1.14 * layout.uiScale,
+                        ),
                       ),
                     );
                   },
@@ -1104,7 +1195,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                           curve: Curves.easeOutBack,
                           child: _GameCard(
                             card: card,
-                            scale: 1.2,
+                            scale: 1.12 * layout.uiScale,
                             selectable: selectable,
                             selected: isSelected,
                           ),
@@ -1156,11 +1247,13 @@ class _PrimaryActionButton extends StatelessWidget {
   const _PrimaryActionButton({
     required this.enabled,
     required this.label,
+    required this.scale,
     required this.onPressed,
   });
 
   final bool enabled;
   final String label;
+  final double scale;
   final VoidCallback? onPressed;
 
   @override
@@ -1183,7 +1276,7 @@ class _PrimaryActionButton extends StatelessWidget {
           style: FilledButton.styleFrom(
             backgroundColor: presidentPrimary,
             foregroundColor: Colors.black,
-            minimumSize: const Size.fromHeight(50),
+            minimumSize: Size.fromHeight(50 * scale),
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(999),
             ),
@@ -1191,8 +1284,8 @@ class _PrimaryActionButton extends StatelessWidget {
           child: Text(
             label,
             textAlign: TextAlign.center,
-            style: const TextStyle(
-              fontSize: 16,
+            style: TextStyle(
+              fontSize: 16 * scale,
               fontWeight: FontWeight.w900,
               letterSpacing: 1.6,
             ),
@@ -1429,6 +1522,7 @@ class _TableGlowPainter extends CustomPainter {
 class _LayoutSnapshot {
   const _LayoutSnapshot({
     required this.size,
+    required this.uiScale,
     required this.tableCenter,
     required this.seatRadius,
     required this.handRect,
@@ -1436,6 +1530,7 @@ class _LayoutSnapshot {
   });
 
   final Size size;
+  final double uiScale;
   final Offset tableCenter;
   final double seatRadius;
   final Rect handRect;
