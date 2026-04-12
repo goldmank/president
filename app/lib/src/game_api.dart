@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
@@ -7,14 +8,24 @@ import 'models.dart';
 class GameApi {
   GameApi({http.Client? client}) : _client = client ?? http.Client();
 
-  static const String _defaultBaseUrl = String.fromEnvironment(
+  static const String _configuredBaseUrl = String.fromEnvironment(
     'SERVER_URL',
-    defaultValue: 'https://assad.ngrok.dev',
+    defaultValue: '',
   );
 
   final http.Client _client;
 
-  Uri _uri(String path) => Uri.parse('$_defaultBaseUrl$path');
+  String get _baseUrl {
+    if (_configuredBaseUrl.isNotEmpty) {
+      return _configuredBaseUrl;
+    }
+
+    return defaultTargetPlatform == TargetPlatform.android
+        ? 'http://10.0.2.2:3001'
+        : 'http://127.0.0.1:3001';
+  }
+
+  Uri _uri(String path) => Uri.parse('$_baseUrl$path');
 
   Future<PublicGameStateModel> createGame({int? playerCount}) async {
     final response = await _client.post(

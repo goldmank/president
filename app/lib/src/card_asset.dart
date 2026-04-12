@@ -134,54 +134,15 @@ class JokerCardFace extends StatelessWidget {
           ),
         ],
       ),
-      child: Stack(
-        children: [
-          Positioned(
-            left: 6 * scale,
-            top: 6 * scale,
-            child: Text(
-              'JKR',
-              style: TextStyle(
-                color: presidentPrimary,
-                fontSize: 9 * scale,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+      child: Center(
+        child: Padding(
+          padding: EdgeInsets.all(14 * scale),
+          child: Image.asset(
+            'assets/joker.png',
+            fit: BoxFit.contain,
+            filterQuality: FilterQuality.high,
           ),
-          Center(
-            child: Container(
-              width: 34 * scale,
-              height: 34 * scale,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: presidentPrimary.withValues(alpha: 0.08),
-                border: Border.all(
-                  color: presidentPrimary.withValues(alpha: 0.35),
-                ),
-              ),
-              child: Icon(
-                Icons.star_rounded,
-                color: presidentPrimary,
-                size: 22 * scale,
-              ),
-            ),
-          ),
-          Positioned(
-            right: 6 * scale,
-            bottom: 6 * scale,
-            child: RotatedBox(
-              quarterTurns: 2,
-              child: Text(
-                'JKR',
-                style: TextStyle(
-                  color: presidentPrimary,
-                  fontSize: 9 * scale,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

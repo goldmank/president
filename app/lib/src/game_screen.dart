@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'card_asset.dart';
 import 'game_api.dart';
@@ -411,14 +412,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         state.viewerHand.length,
         _selectedCardIds.contains(card.id),
       );
-      final end = _pileRenderedCardCenter(layout, cards, index);
+      final isFirstSetOnTable = state.pile.history.isEmpty;
+      final end = _pileRenderedCardCenter(
+        layout,
+        cards,
+        index,
+        centerFirstSet: isFirstSetOnTable,
+      );
       flights.add(
         _FlightSpec(
           card: card,
           start: start,
           end: end,
           startAngle: _viewerCardAngle(handIndex, state.viewerHand.length),
-          endAngle: _pileCardAngle(card, index),
+          endAngle: _pileCardAngle(card, index, tight: isFirstSetOnTable),
           startScale: 1.08,
           endScale: 1.12,
         ),
@@ -486,14 +493,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       final spread = (index - (cards.length - 1) / 2) * 16;
       final start =
           seatCenter + inward * 48 + Offset(spread, math.sin(seatAngle) * 4);
-      final end = _pileRenderedCardCenter(layout, cards, index);
+      final isFirstSetOnTable = state.pile.history.isEmpty;
+      final end = _pileRenderedCardCenter(
+        layout,
+        cards,
+        index,
+        centerFirstSet: isFirstSetOnTable,
+      );
       flights.add(
         _FlightSpec(
           card: cards[index],
           start: start,
           end: end,
           startAngle: seatAngle + math.pi / 2,
-          endAngle: _pileCardAngle(cards[index], index),
+          endAngle: _pileCardAngle(
+            cards[index],
+            index,
+            tight: isFirstSetOnTable,
+          ),
           startScale: 0.76,
           endScale: 1.12,
         ),
@@ -592,26 +609,30 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: DecoratedBox(
+      body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: <Color>[Color(0xFF1B1D1F), presidentBackground],
+          image: DecorationImage(
+            image: AssetImage('assets/bg.png'),
+            fit: BoxFit.cover,
           ),
         ),
-        child: SafeArea(
-          child: _loading
-              ? const Center(
-                  child: CircularProgressIndicator(color: presidentPrimary),
-                )
-              : _state == null
-              ? _ErrorState(onRetry: _loadGame)
-              : LayoutBuilder(
-                  builder: (context, constraints) {
-                    return _buildGame(context, constraints.biggest, _state!);
-                  },
-                ),
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: presidentBackground.withValues(alpha: 0.58),
+          ),
+          child: SafeArea(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(color: presidentPrimary),
+                  )
+                : _state == null
+                ? _ErrorState(onRetry: _loadGame)
+                : LayoutBuilder(
+                    builder: (context, constraints) {
+                      return _buildGame(context, constraints.biggest, _state!);
+                    },
+                  ),
+          ),
         ),
       ),
     );
@@ -820,13 +841,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                             ]
                           : const <BoxShadow>[],
                     ),
-                    alignment: Alignment.center,
-                    child: Text(
-                      player.name.characters.first.toUpperCase(),
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: isViewer ? 26 : 24,
-                        fontWeight: FontWeight.w800,
+                    child: ClipOval(
+                      child: Transform.scale(
+                        scale: 1.24,
+                        child: SvgPicture.asset(
+                          'assets/default_avatar.svg',
+                          fit: BoxFit.cover,
+                          colorFilter: ColorFilter.mode(
+                            isActive ? Colors.white : presidentSurfaceLowest,
+                            BlendMode.srcIn,
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -917,10 +942,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   builder: (context) {
                     final set = renderedSets[setIndex];
                     final card = set.cards[cardIndex];
+                    final isFirstSetOfRound =
+                        history.isNotEmpty &&
+                        set.timestamp == history.first.timestamp;
                     final center = _pileRenderedCardCenter(
                       layout,
                       set.cards,
                       cardIndex,
+                      centerFirstSet: isFirstSetOfRound,
                     );
 
                     return Positioned(
@@ -938,6 +967,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                         angle: _pileCardAngle(
                           card,
                           setIndex * 10 + cardIndex,
+                          tight: isFirstSetOfRound,
                         ),
                         child: _GameCard(card: card, scale: 1.14),
                       ),
@@ -1517,7 +1547,14 @@ Offset _pileRenderedCardCenter(
   _LayoutSnapshot layout,
   List<CardModel> cards,
   int index,
+  {bool centerFirstSet = false}
 ) {
+  if (centerFirstSet) {
+    final cardOffsetX = (index - (cards.length - 1) / 2) * 10.0;
+    final cardOffsetY = ((index % 2) * 3 - 1.5).toDouble();
+    return layout.tableCenter + Offset(cardOffsetX, cardOffsetY);
+  }
+
   final setOffset = _pileSetOffset(cards);
   final cardOffsetX = (index - (cards.length - 1) / 2) * 10.0;
   final cardOffsetY = ((index % 2) * 3 - 1.5).toDouble();
@@ -1525,12 +1562,12 @@ Offset _pileRenderedCardCenter(
       Offset(setOffset.dx + cardOffsetX, setOffset.dy + cardOffsetY);
 }
 
-double _pileCardAngle(CardModel card, int index) {
+double _pileCardAngle(CardModel card, int index, {bool tight = false}) {
   final hash = card.id.codeUnits.fold<int>(
     index * 131 + 17,
     (value, unit) => ((value * 31) + unit) & 0x7fffffff,
   );
-  final degrees = (hash % 21) - 10;
+  final degrees = tight ? (hash % 7) - 3 : (hash % 21) - 10;
   return degrees * (math.pi / 180);
 }
 

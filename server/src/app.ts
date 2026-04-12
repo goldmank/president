@@ -8,6 +8,26 @@ export function createApp(): express.Express {
 
   app.use(cors());
   app.use(express.json());
+  app.use((request, response, next) => {
+    const startedAt = Date.now();
+    const body =
+      request.method === "GET" || request.body == null
+        ? ""
+        : ` body=${JSON.stringify(request.body)}`;
+
+    console.log(
+      `[http] -> ${request.method} ${request.originalUrl}${body}`
+    );
+
+    response.on("finish", () => {
+      const durationMs = Date.now() - startedAt;
+      console.log(
+        `[http] <- ${request.method} ${request.originalUrl} ${response.statusCode} ${durationMs}ms`
+      );
+    });
+
+    next();
+  });
 
   app.get("/health", (_request, response) => {
     response.json({ ok: true });
