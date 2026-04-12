@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -26,17 +27,22 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   final Map<String, bool> _passBubbleVisible = <String, bool>{};
   final Map<String, Timer> _passBubbleTimers = <String, Timer>{};
   final List<_CardFlight> _cardFlights = <_CardFlight>[];
+  List<CardModel> _lastKnownViewerHand = <CardModel>[];
 
   PublicGameStateModel? _state;
   bool _loading = true;
   bool _busy = false;
   bool _showResultsOverlay = false;
   bool _showExchangeOverlay = false;
+  bool _showMockResultsOverlay = false;
+  bool _showMockExchangeOverlay = false;
+  bool _exchangeWaiting = false;
+  bool _exchangeReadyToContinue = false;
+  List<CardModel> _receivedExchangeCards = <CardModel>[];
   String? _banner;
   Timer? _bannerTimer;
   Timer? _botTimer;
   _LayoutSnapshot? _layout;
-  List<CardModel> _exchangeSelection = <CardModel>[];
 
   @override
   void initState() {
@@ -101,7 +107,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _banner = null;
       _showResultsOverlay = false;
       _showExchangeOverlay = false;
-      _exchangeSelection = <CardModel>[];
+      _showMockResultsOverlay = false;
+      _showMockExchangeOverlay = false;
+      _exchangeWaiting = false;
+      _exchangeReadyToContinue = false;
+      _receivedExchangeCards = <CardModel>[];
       _selectedCardIds.clear();
       _animatingViewerCardIds.clear();
       _clearFlights();
@@ -116,6 +126,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _state = state;
         _loading = false;
       });
+      if (state.viewerHand.isNotEmpty) {
+        _lastKnownViewerHand = List<CardModel>.from(state.viewerHand);
+      }
       unawaited(_analytics.logGameStarted(state));
       _scheduleBotTurnIfNeeded();
     } catch (error, stackTrace) {
@@ -182,9 +195,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       if (next.phase == GamePhase.finished) {
         _showResultsOverlay = true;
         _showExchangeOverlay = false;
-        _exchangeSelection = <CardModel>[];
+        _showMockResultsOverlay = false;
+        _showMockExchangeOverlay = false;
+        _exchangeWaiting = false;
+        _exchangeReadyToContinue = false;
+        _receivedExchangeCards = <CardModel>[];
+      } else {
+        _showResultsOverlay = false;
+        _showExchangeOverlay = false;
+        _showMockResultsOverlay = false;
+        _showMockExchangeOverlay = false;
+        _exchangeWaiting = false;
+        _exchangeReadyToContinue = false;
+        _receivedExchangeCards = <CardModel>[];
       }
     });
+    if (next.viewerHand.isNotEmpty) {
+      _lastKnownViewerHand = List<CardModel>.from(next.viewerHand);
+    }
     for (final flight in lingeringFlights) {
       flight.controller.dispose();
     }
@@ -217,8 +245,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final state = _state;
     if (state == null ||
         state.phase != GamePhase.playing ||
-        _showExchangeOverlay ||
-        _showResultsOverlay) {
+        _hasBlockingOverlay) {
       return;
     }
 
@@ -290,9 +317,14 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         state.phase == GamePhase.playing &&
         state.currentTurnPlayerId == state.viewerPlayerId &&
         !_busy &&
-        !_showExchangeOverlay &&
-        !_showResultsOverlay;
+        !_hasBlockingOverlay;
   }
+
+  bool get _hasBlockingOverlay =>
+      _showResultsOverlay ||
+      _showExchangeOverlay ||
+      _showMockResultsOverlay ||
+      _showMockExchangeOverlay;
 
   Set<String> _selectableCardIds(PublicGameStateModel state) {
     if (!_isViewerTurn) {
@@ -621,11 +653,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       return;
     }
 
+    if (_showMockResultsOverlay && state.phase != GamePhase.finished) {
+      setState(() {
+        _showMockResultsOverlay = false;
+        _showMockExchangeOverlay = true;
+        _exchangeWaiting = false;
+        _exchangeReadyToContinue = false;
+        _receivedExchangeCards = <CardModel>[];
+      });
+      return;
+    }
+
     final exchange = buildExchangeViewData(state);
     setState(() {
       _showResultsOverlay = false;
       _showExchangeOverlay = exchange != null;
-      _exchangeSelection = <CardModel>[];
+      _exchangeWaiting = false;
+      _exchangeReadyToContinue = false;
+      _receivedExchangeCards = <CardModel>[];
     });
 
     if (exchange == null) {
@@ -633,26 +678,210 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _toggleExchangeCard(CardModel card) {
-    setState(() {
-      final existing = _exchangeSelection.indexWhere(
-        (entry) => entry.id == card.id,
-      );
-      if (existing >= 0) {
-        _exchangeSelection.removeAt(existing);
-      } else {
-        _exchangeSelection.add(card);
-        _exchangeSelection.sort(compareCards);
-      }
-    });
-  }
-
   void _closeExchangeAndRestart() {
     setState(() {
       _showExchangeOverlay = false;
-      _exchangeSelection = <CardModel>[];
+      _showMockExchangeOverlay = false;
+      _exchangeWaiting = false;
+      _exchangeReadyToContinue = false;
+      _receivedExchangeCards = <CardModel>[];
     });
     _loadGame();
+  }
+
+  void _closeMockExchange() {
+    setState(() {
+      _showMockExchangeOverlay = false;
+      _exchangeWaiting = false;
+      _exchangeReadyToContinue = false;
+      _receivedExchangeCards = <CardModel>[];
+    });
+  }
+
+  Future<void> _confirmExchangeAndContinue() async {
+    final state = _state;
+    if (state == null || _exchangeWaiting) {
+      return;
+    }
+    final exchangeData = _showMockExchangeOverlay
+        ? buildMockExchangeViewData(state)
+        : buildExchangeViewData(state);
+
+    if (_exchangeReadyToContinue) {
+      if (_showMockExchangeOverlay) {
+        setState(() {
+          _showMockExchangeOverlay = false;
+          _exchangeWaiting = false;
+          _exchangeReadyToContinue = false;
+          _receivedExchangeCards = <CardModel>[];
+        });
+        return;
+      }
+
+      setState(() {
+        _exchangeReadyToContinue = false;
+      });
+
+      try {
+        final next = await _api.startNextRound();
+        if (!mounted) {
+          return;
+        }
+        await _setGameState(next);
+      } catch (error, stackTrace) {
+        _reportError('start_next_round', error, stackTrace);
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _exchangeReadyToContinue = true;
+        });
+        _showBanner(_formatError(error));
+      }
+      return;
+    }
+
+    setState(() {
+      _exchangeWaiting = true;
+      _exchangeReadyToContinue = false;
+      _receivedExchangeCards = <CardModel>[];
+    });
+
+    await Future<void>.delayed(const Duration(milliseconds: 1400));
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _exchangeWaiting = false;
+      _exchangeReadyToContinue = true;
+      _receivedExchangeCards = _simulatedReceivedExchangeCards(exchangeData);
+    });
+  }
+
+  Future<void> _confirmExitGame() async {
+    final shouldExit = await showDialog<bool>(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          backgroundColor: presidentSurfaceContainer,
+          title: const Text('Leave Game?'),
+          content: const Text('Your current match will be closed.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('CANCEL'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              style: FilledButton.styleFrom(
+                backgroundColor: presidentDanger,
+                foregroundColor: Colors.black,
+              ),
+              child: const Text('LEAVE'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (shouldExit == true && mounted) {
+      Navigator.of(context).maybePop();
+    }
+  }
+
+  List<CardModel> _exchangeHandForState(PublicGameStateModel state) {
+    if (state.viewerHand.isNotEmpty) {
+      return state.viewerHand;
+    }
+    return _lastKnownViewerHand;
+  }
+
+  List<CardModel> _autoExchangeCards(
+    List<CardModel> hand,
+    ExchangeViewData? exchange,
+  ) {
+    if (exchange == null || !exchange.required || hand.isEmpty) {
+      return const <CardModel>[];
+    }
+
+    final ordered = [...hand]..sort(compareCards);
+    final count = math.min(exchange.requiredCount, ordered.length);
+    if (exchange.direction == ExchangeDirection.sendWorst) {
+      return ordered.take(count).toList();
+    }
+    if (exchange.direction == ExchangeDirection.sendBest) {
+      return ordered.skip(ordered.length - count).toList();
+    }
+    return const <CardModel>[];
+  }
+
+  List<CardModel> _simulatedReceivedExchangeCards(ExchangeViewData? exchange) {
+    if (exchange == null || !exchange.required) {
+      return const <CardModel>[];
+    }
+
+    final ranks = exchange.direction == ExchangeDirection.sendWorst
+        ? <int>[15, 14, 13, 12]
+        : <int>[3, 4, 5, 6];
+    final suits = <Suit>[Suit.spades, Suit.hearts, Suit.clubs, Suit.diamonds];
+
+    return List<CardModel>.generate(exchange.requiredCount, (index) {
+      final rank = ranks[index % ranks.length];
+      final suit = suits[index % suits.length];
+      return CardModel(
+        id: 'exchange-preview-${exchange.role}-$index-$rank-${suit.name}',
+        suit: suit,
+        rank: rank,
+      );
+    });
+  }
+
+  Future<void> _handleDebugAction(_DebugMenuAction action) async {
+    switch (action) {
+      case _DebugMenuAction.toggleMockResults:
+        setState(() {
+          _showMockResultsOverlay = !_showMockResultsOverlay;
+          if (_showMockResultsOverlay) {
+            _showResultsOverlay = false;
+            _showExchangeOverlay = false;
+            _showMockExchangeOverlay = false;
+          }
+        });
+      case _DebugMenuAction.toggleMockExchange:
+        setState(() {
+          _showMockExchangeOverlay = !_showMockExchangeOverlay;
+          if (_showMockExchangeOverlay) {
+            _showResultsOverlay = false;
+            _showExchangeOverlay = false;
+            _showMockResultsOverlay = false;
+          }
+        });
+      case _DebugMenuAction.fastForwardMatch:
+        if (_busy) {
+          return;
+        }
+        _botTimer?.cancel();
+        setState(() {
+          _busy = true;
+        });
+        try {
+          final next = await _api.fastForwardGame();
+          if (!mounted) {
+            return;
+          }
+          await _setGameState(next);
+        } catch (error, stackTrace) {
+          _reportError('debug_fast_forward', error, stackTrace);
+          if (!mounted) {
+            return;
+          }
+          setState(() {
+            _busy = false;
+          });
+          _showBanner(_formatError(error));
+        }
+    }
   }
 
   @override
@@ -747,6 +976,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final currentPlayer = state.players.firstWhere(
       (player) => player.id == state.currentTurnPlayerId,
     );
+    final resultsOverlayData = _showMockResultsOverlay
+        ? buildMockMatchResultsViewData(state)
+        : buildMatchResultsViewData(state);
+    final exchangeOverlayData = _showMockExchangeOverlay
+        ? buildMockExchangeViewData(state)
+        : buildExchangeViewData(state);
+    final exchangeHand = _exchangeHandForState(state);
+    final autoExchangeCards = _autoExchangeCards(
+      exchangeHand,
+      exchangeOverlayData,
+    );
     final buttonEnabled = _selectedCardIds.isEmpty
         ? _isViewerTurn
         : _isSelectedPlayValid(state);
@@ -801,6 +1041,22 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
+        Positioned(
+          top: 4,
+          left: 0,
+          child: _LeaveGameButton(onPressed: _confirmExitGame),
+        ),
+        if (kDebugMode)
+          Positioned(
+            top: 0,
+            right: 0,
+            child: _DebugMenuButton(
+              busy: _busy,
+              mockResultsVisible: _showMockResultsOverlay,
+              mockExchangeVisible: _showMockExchangeOverlay,
+              onSelected: _handleDebugAction,
+            ),
+          ),
         for (var index = 0; index < state.players.length; index++)
           _buildPlayerSeat(context, state, state.players[index], index, layout),
         _buildCenterPile(context, state, layout),
@@ -823,20 +1079,25 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             ),
             flight: flight,
           ),
-        if (_showResultsOverlay && state.phase == GamePhase.finished)
+        if ((_showResultsOverlay && state.phase == GamePhase.finished) ||
+            _showMockResultsOverlay)
           ResultsOverlay(
-            data: buildMatchResultsViewData(state),
+            data: resultsOverlayData,
             onContinue: _onResultsContinue,
-            onClose: () => setState(() => _showResultsOverlay = false),
           ),
-        if (_showExchangeOverlay && state.phase == GamePhase.finished)
+        if (((_showExchangeOverlay && state.phase == GamePhase.finished) ||
+                _showMockExchangeOverlay) &&
+            exchangeOverlayData != null)
           ExchangeOverlay(
-            data: buildExchangeViewData(state)!,
-            hand: state.viewerHand,
-            selectedCards: _exchangeSelection,
-            onToggleCard: _toggleExchangeCard,
-            onConfirm: _closeExchangeAndRestart,
-            onLeave: _closeExchangeAndRestart,
+            data: exchangeOverlayData,
+            exchangeCards: autoExchangeCards,
+            isWaiting: _exchangeWaiting,
+            isReadyToContinue: _exchangeReadyToContinue,
+            receivedCards: _receivedExchangeCards,
+            onConfirm: _confirmExchangeAndContinue,
+            onLeave: _showMockExchangeOverlay
+                ? _closeMockExchange
+                : _closeExchangeAndRestart,
           ),
       ],
     );
@@ -865,10 +1126,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final opacity = isActive ? 1.0 : (isFinished ? 0.34 : 0.62);
     final widgetWidth = (isViewer ? 124.0 : 112.0) * layout.uiScale;
     final widgetHeight = (isViewer ? 142.0 : 154.0) * layout.uiScale;
+    final avatarSize = (isViewer ? 74.0 : 68.0) * layout.uiScale;
+    final topOffset = isViewer ? 34.0 * layout.uiScale : 0.0;
 
     return Positioned(
       left: center.dx - widgetWidth / 2,
-      top: center.dy - widgetHeight / 2,
+      top: center.dy - widgetHeight / 2 + topOffset,
       width: widgetWidth,
       height: widgetHeight,
       child: AnimatedScale(
@@ -886,62 +1149,61 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isActive
-                          ? presidentSurfaceHigh
-                          : presidentSurfaceContainer,
-                      borderRadius: BorderRadius.circular(7),
-                    ),
-                    child: Text(
-                      role.toUpperCase(),
-                      style: TextStyle(
-                        fontSize: 9 * layout.uiScale,
-                        color: presidentText,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.9,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Container(
-                    width: (isViewer ? 74.0 : 68.0) * layout.uiScale,
-                    height: (isViewer ? 74.0 : 68.0) * layout.uiScale,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: isActive
-                            ? presidentPrimary
-                            : presidentOutlineVariant,
-                        width: isActive ? 2.5 : 1.5,
-                      ),
-                      color: _parseColor(player.avatarColor),
-                      boxShadow: isActive
-                          ? <BoxShadow>[
-                              BoxShadow(
-                                color: presidentPrimary.withValues(alpha: 0.22),
-                                blurRadius: 18,
-                                spreadRadius: 2,
+                  SizedBox(
+                    width: avatarSize,
+                    height: avatarSize,
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: <Widget>[
+                        Container(
+                          width: avatarSize,
+                          height: avatarSize,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: isActive
+                                  ? presidentPrimary
+                                  : presidentOutlineVariant,
+                              width: isActive ? 2.5 : 1.5,
+                            ),
+                            color: _parseColor(player.avatarColor),
+                            boxShadow: isActive
+                                ? <BoxShadow>[
+                                    BoxShadow(
+                                      color: presidentPrimary.withValues(
+                                        alpha: 0.22,
+                                      ),
+                                      blurRadius: 18,
+                                      spreadRadius: 2,
+                                    ),
+                                  ]
+                                : const <BoxShadow>[],
+                          ),
+                          child: ClipOval(
+                            child: Transform.scale(
+                              scale: 1.24,
+                              child: SvgPicture.asset(
+                                'assets/default_avatar.svg',
+                                fit: BoxFit.cover,
+                                colorFilter: ColorFilter.mode(
+                                  isActive
+                                      ? Colors.white
+                                      : presidentSurfaceLowest,
+                                  BlendMode.srcIn,
+                                ),
                               ),
-                            ]
-                          : const <BoxShadow>[],
-                    ),
-                    child: ClipOval(
-                      child: Transform.scale(
-                        scale: 1.24,
-                        child: SvgPicture.asset(
-                          'assets/default_avatar.svg',
-                          fit: BoxFit.cover,
-                          colorFilter: ColorFilter.mode(
-                            isActive ? Colors.white : presidentSurfaceLowest,
-                            BlendMode.srcIn,
+                            ),
                           ),
                         ),
-                      ),
+                        Positioned(
+                          top: 2 * layout.uiScale,
+                          right: 2 * layout.uiScale,
+                          child: _SeatRoleBadge(
+                            role: role,
+                            scale: layout.uiScale,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -1028,11 +1290,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           width: 220,
           child: Column(
             children: <Widget>[
-              Icon(
-                Icons.style_rounded,
-                size: 72,
-                color: presidentOutline,
-              ),
+              Icon(Icons.style_rounded, size: 72, color: presidentOutline),
               const SizedBox(height: 12),
               Text(
                 'Play any valid set\nto lead',
@@ -1059,9 +1317,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           clipBehavior: Clip.none,
           children: <Widget>[
             for (var setIndex = 0; setIndex < renderedSets.length; setIndex++)
-              for (var cardIndex = 0;
-                  cardIndex < renderedSets[setIndex].cards.length;
-                  cardIndex++)
+              for (
+                var cardIndex = 0;
+                cardIndex < renderedSets[setIndex].cards.length;
+                cardIndex++
+              )
                 Builder(
                   builder: (context) {
                     final set = renderedSets[setIndex];
@@ -1156,8 +1416,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                     selectableIds.contains(card.id) || isSelected;
                 final row = _viewerCardRow(metrics, index);
                 final column = _viewerCardColumn(metrics, index);
-                final rowCount =
-                    row == 1 ? metrics.frontCount : metrics.backCount;
+                final rowCount = row == 1
+                    ? metrics.frontCount
+                    : metrics.backCount;
                 final angle = _viewerCardAngle(column, rowCount);
                 final selectionNudge = isSelected
                     ? (angle <= 0 ? -0.03 : 0.03)
@@ -1178,9 +1439,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                   child: GestureDetector(
                     onTap: _isViewerTurn ? () => _toggleCard(card) : null,
                     child: AnimatedRotation(
-                      turns:
-                          (angle + selectionNudge) /
-                          (2 * math.pi),
+                      turns: (angle + selectionNudge) / (2 * math.pi),
                       duration: const Duration(milliseconds: 220),
                       curve: Curves.easeOutBack,
                       child: AnimatedSlide(
@@ -1208,6 +1467,144 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             ),
         ],
       ),
+    );
+  }
+}
+
+enum _DebugMenuAction {
+  toggleMockResults,
+  toggleMockExchange,
+  fastForwardMatch,
+}
+
+class _DebugMenuButton extends StatelessWidget {
+  const _DebugMenuButton({
+    required this.busy,
+    required this.mockResultsVisible,
+    required this.mockExchangeVisible,
+    required this.onSelected,
+  });
+
+  final bool busy;
+  final bool mockResultsVisible;
+  final bool mockExchangeVisible;
+  final ValueChanged<_DebugMenuAction> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: presidentSurfaceHigh.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: presidentOutlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+        child: PopupMenuButton<_DebugMenuAction>(
+          tooltip: 'Debug menu',
+          padding: const EdgeInsets.all(12),
+          icon: const Icon(Icons.bug_report_rounded, color: presidentText),
+          onSelected: onSelected,
+          itemBuilder: (context) => <PopupMenuEntry<_DebugMenuAction>>[
+            CheckedPopupMenuItem<_DebugMenuAction>(
+              value: _DebugMenuAction.toggleMockResults,
+              checked: mockResultsVisible,
+              child: const Text('Mock Results Overlay'),
+            ),
+            CheckedPopupMenuItem<_DebugMenuAction>(
+              value: _DebugMenuAction.toggleMockExchange,
+              checked: mockExchangeVisible,
+              child: const Text('Mock Exchange Overlay'),
+            ),
+            PopupMenuItem<_DebugMenuAction>(
+              value: _DebugMenuAction.fastForwardMatch,
+              enabled: !busy,
+              child: const Text('Fast-forward Match'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LeaveGameButton extends StatelessWidget {
+  const _LeaveGameButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        decoration: BoxDecoration(
+          color: presidentSurfaceHigh.withValues(alpha: 0.94),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: presidentOutlineVariant.withValues(alpha: 0.4),
+          ),
+        ),
+        child: Tooltip(
+          message: 'Leave game',
+          child: IconButton(
+            onPressed: onPressed,
+            padding: const EdgeInsets.all(10),
+            constraints: const BoxConstraints(),
+            icon: const Icon(
+              Icons.logout_rounded,
+              size: 20,
+              color: presidentText,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SeatRoleBadge extends StatelessWidget {
+  const _SeatRoleBadge({required this.role, required this.scale});
+
+  final String role;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = switch (role) {
+      'President' => presidentPrimary,
+      'Vice' => presidentSecondary,
+      'Vice Scum' => presidentTertiary,
+      'Scum' => presidentDanger,
+      _ => presidentMuted,
+    };
+    final icon = switch (role) {
+      'President' => Icons.workspace_premium_rounded,
+      'Vice' => Icons.military_tech_rounded,
+      'Vice Scum' => Icons.shield_moon_rounded,
+      'Scum' => Icons.block_rounded,
+      _ => Icons.person_rounded,
+    };
+    final size = 24.0 * scale;
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: presidentSurfaceLowest.withValues(alpha: 0.96),
+        border: Border.all(color: tint.withValues(alpha: 0.88), width: 1.5),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: tint.withValues(alpha: 0.22),
+            blurRadius: 10 * scale,
+            spreadRadius: 1 * scale,
+          ),
+        ],
+      ),
+      child: Icon(icon, size: 14 * scale, color: tint),
     );
   }
 }
@@ -1643,15 +2040,12 @@ Offset _viewerCardPosition(
   final row = _viewerCardRow(metrics, index);
   final column = _viewerCardColumn(metrics, index);
   final rowCount = row == 1 ? metrics.frontCount : metrics.backCount;
-  final normalized = rowCount <= 1
-      ? 0.0
-      : ((column / (rowCount - 1)) * 2) - 1;
+  final normalized = rowCount <= 1 ? 0.0 : ((column / (rowCount - 1)) * 2) - 1;
   final arc = math.pow(normalized.abs(), 1.45).toDouble();
-  final baseTop =
-      metrics.cardTop + (row == 0 ? 0 : metrics.rowGap) + arc * 24;
+  final baseTop = metrics.cardTop + (row == 0 ? 0 : metrics.rowGap) + arc * 24;
   final top = baseTop - (isSelected ? 36 : 0);
-  final x = _viewerRowStartX(layout, metrics, rowCount) +
-      metrics.spacing * column;
+  final x =
+      _viewerRowStartX(layout, metrics, rowCount) + metrics.spacing * column;
   return Offset(x, top);
 }
 
@@ -1763,9 +2157,9 @@ Offset _pileSetOffset(List<CardModel> cards) {
 Offset _pileRenderedCardCenter(
   _LayoutSnapshot layout,
   List<CardModel> cards,
-  int index,
-  {bool centerFirstSet = false}
-) {
+  int index, {
+  bool centerFirstSet = false,
+}) {
   if (centerFirstSet) {
     final cardOffsetX = (index - (cards.length - 1) / 2) * 10.0;
     final cardOffsetY = ((index % 2) * 3 - 1.5).toDouble();

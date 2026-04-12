@@ -53,10 +53,10 @@ class ExchangeViewData {
 
   String get instruction {
     if (direction == ExchangeDirection.sendWorst) {
-      return 'Select your $requiredCount weakest cards';
+      return 'Your $requiredCount weakest cards will be sent to the $counterpartRole';
     }
     if (direction == ExchangeDirection.sendBest) {
-      return 'Select your $requiredCount strongest cards';
+      return 'Your $requiredCount strongest cards will be sent to the $counterpartRole';
     }
     return 'No exchange required';
   }
@@ -112,6 +112,125 @@ MatchResultsViewData buildMatchResultsViewData(PublicGameStateModel state) {
   }
 
   return MatchResultsViewData(entries: ordered, viewer: viewer, shifts: shifts);
+}
+
+MatchResultsViewData buildMockMatchResultsViewData(
+  PublicGameStateModel? baseState,
+) {
+  const fallbackPlayers = <PublicPlayerStateModel>[
+    PublicPlayerStateModel(
+      id: 'bot-1',
+      name: 'Marcus Vane',
+      kind: PlayerKind.bot,
+      avatarColor: '#FFD700',
+      handCount: 0,
+      status: PlayerStatus.finished,
+      finishingPosition: 1,
+      isCurrentTurn: false,
+    ),
+    PublicPlayerStateModel(
+      id: 'bot-2',
+      name: 'Elena Rossi',
+      kind: PlayerKind.bot,
+      avatarColor: '#C0C0C0',
+      handCount: 0,
+      status: PlayerStatus.finished,
+      finishingPosition: 2,
+      isCurrentTurn: false,
+    ),
+    PublicPlayerStateModel(
+      id: 'human-1',
+      name: 'Julian Exec',
+      kind: PlayerKind.human,
+      avatarColor: '#3b82f6',
+      handCount: 0,
+      status: PlayerStatus.finished,
+      finishingPosition: 3,
+      isCurrentTurn: false,
+    ),
+    PublicPlayerStateModel(
+      id: 'bot-3',
+      name: 'Jordan Smith',
+      kind: PlayerKind.bot,
+      avatarColor: '#CD7F32',
+      handCount: 0,
+      status: PlayerStatus.finished,
+      finishingPosition: 4,
+      isCurrentTurn: false,
+    ),
+    PublicPlayerStateModel(
+      id: 'bot-4',
+      name: 'Alex Chen',
+      kind: PlayerKind.bot,
+      avatarColor: '#ffb4ab',
+      handCount: 0,
+      status: PlayerStatus.finished,
+      finishingPosition: 5,
+      isCurrentTurn: false,
+    ),
+  ];
+
+  final sourcePlayers = baseState != null && baseState.players.length >= 3
+      ? baseState.players
+            .map(
+              (player) => PublicPlayerStateModel(
+                id: player.id,
+                name: player.name,
+                kind: player.kind,
+                avatarColor: player.avatarColor,
+                handCount: 0,
+                status: PlayerStatus.finished,
+                finishingPosition: null,
+                isCurrentTurn: false,
+              ),
+            )
+            .toList()
+      : fallbackPlayers;
+  final viewerId = baseState?.viewerPlayerId ?? 'human-1';
+  final nonViewerPlayers = sourcePlayers
+      .where((player) => player.id != viewerId)
+      .toList();
+  final viewerPlayer = sourcePlayers.firstWhere(
+    (player) => player.id == viewerId,
+    orElse: () => sourcePlayers.first,
+  );
+  final orderedPlayers = <PublicPlayerStateModel>[
+    if (nonViewerPlayers.isNotEmpty) nonViewerPlayers[0],
+    if (nonViewerPlayers.length > 1) nonViewerPlayers[1],
+    viewerPlayer,
+    ...nonViewerPlayers.skip(2),
+  ];
+  final placedPlayers = orderedPlayers
+      .asMap()
+      .entries
+      .map(
+        (entry) => PublicPlayerStateModel(
+          id: entry.value.id,
+          name: entry.value.name,
+          kind: entry.value.kind,
+          avatarColor: entry.value.avatarColor,
+          handCount: entry.value.handCount,
+          status: PlayerStatus.finished,
+          finishingPosition: entry.key + 1,
+          isCurrentTurn: false,
+        ),
+      )
+      .toList();
+
+  final mockState = PublicGameStateModel(
+    id: baseState?.id ?? 'mock-results',
+    phase: GamePhase.finished,
+    players: placedPlayers,
+    viewerPlayerId: viewerId,
+    viewerHand: baseState?.viewerHand ?? const <CardModel>[],
+    currentTurnPlayerId: viewerId,
+    lastSuccessfulPlayerId: null,
+    pile: baseState?.pile ?? const PileState(currentSet: null, history: []),
+    requirementText: baseState?.requirementText ?? 'Round Complete',
+    log: baseState?.log ?? const <LogEntryModel>[],
+  );
+
+  return buildMatchResultsViewData(mockState);
 }
 
 ExchangeViewData? buildExchangeViewData(PublicGameStateModel state) {
@@ -172,27 +291,122 @@ ExchangeViewData? buildExchangeViewData(PublicGameStateModel state) {
   };
 }
 
+ExchangeViewData buildMockExchangeViewData(PublicGameStateModel? baseState) {
+  const fallbackPlayers = <PublicPlayerStateModel>[
+    PublicPlayerStateModel(
+      id: 'bot-1',
+      name: 'Marcus Vane',
+      kind: PlayerKind.bot,
+      avatarColor: '#C39A1C',
+      handCount: 0,
+      status: PlayerStatus.finished,
+      finishingPosition: 5,
+      isCurrentTurn: false,
+    ),
+    PublicPlayerStateModel(
+      id: 'bot-2',
+      name: 'Elena Rossi',
+      kind: PlayerKind.bot,
+      avatarColor: '#C0C0C0',
+      handCount: 0,
+      status: PlayerStatus.finished,
+      finishingPosition: 2,
+      isCurrentTurn: false,
+    ),
+    PublicPlayerStateModel(
+      id: 'human-1',
+      name: 'Julian Exec',
+      kind: PlayerKind.human,
+      avatarColor: '#3b82f6',
+      handCount: 13,
+      status: PlayerStatus.finished,
+      finishingPosition: 1,
+      isCurrentTurn: false,
+    ),
+    PublicPlayerStateModel(
+      id: 'bot-3',
+      name: 'Jordan Smith',
+      kind: PlayerKind.bot,
+      avatarColor: '#CD7F32',
+      handCount: 0,
+      status: PlayerStatus.finished,
+      finishingPosition: 4,
+      isCurrentTurn: false,
+    ),
+    PublicPlayerStateModel(
+      id: 'bot-4',
+      name: 'Alex Chen',
+      kind: PlayerKind.bot,
+      avatarColor: '#ffb4ab',
+      handCount: 0,
+      status: PlayerStatus.finished,
+      finishingPosition: 5,
+      isCurrentTurn: false,
+    ),
+  ];
+
+  final viewerId = baseState?.viewerPlayerId ?? 'human-1';
+  final players = baseState != null && baseState.players.length >= 4
+      ? baseState.players
+            .asMap()
+            .entries
+            .map(
+              (entry) => PublicPlayerStateModel(
+                id: entry.value.id,
+                name: entry.value.name,
+                kind: entry.value.kind,
+                avatarColor: entry.value.avatarColor,
+                handCount: entry.value.id == viewerId
+                    ? entry.value.handCount
+                    : 0,
+                status: PlayerStatus.finished,
+                finishingPosition: entry.value.id == viewerId
+                    ? 1
+                    : entry.key == 0
+                    ? baseState.players.length
+                    : entry.key == 1
+                    ? 2
+                    : entry.key + 1,
+                isCurrentTurn: false,
+              ),
+            )
+            .toList()
+      : fallbackPlayers;
+
+  final mockState = PublicGameStateModel(
+    id: baseState?.id ?? 'mock-exchange',
+    phase: GamePhase.finished,
+    players: players,
+    viewerPlayerId: viewerId,
+    viewerHand: baseState?.viewerHand ?? const <CardModel>[],
+    currentTurnPlayerId: viewerId,
+    lastSuccessfulPlayerId: null,
+    pile: const PileState(currentSet: null, history: []),
+    requirementText: 'New Round',
+    log: const <LogEntryModel>[],
+  );
+
+  return buildExchangeViewData(mockState)!;
+}
+
 class ResultsOverlay extends StatelessWidget {
   const ResultsOverlay({
     super.key,
     required this.data,
     required this.onContinue,
-    required this.onClose,
   });
 
   final MatchResultsViewData data;
   final VoidCallback onContinue;
-  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     return _OverlayShell(
       child: Column(
         children: [
-          _OverlayHeader(
+          const _OverlayHeader(
             eyebrow: 'Session Results',
             title: 'The Hierarchy',
-            onClose: onClose,
           ),
           const SizedBox(height: 16),
           ...data.entries.map(
@@ -221,31 +435,145 @@ class ExchangeOverlay extends StatelessWidget {
   const ExchangeOverlay({
     super.key,
     required this.data,
-    required this.hand,
-    required this.selectedCards,
-    required this.onToggleCard,
+    required this.exchangeCards,
+    required this.isWaiting,
+    required this.isReadyToContinue,
+    required this.receivedCards,
     required this.onConfirm,
     required this.onLeave,
   });
 
   final ExchangeViewData data;
-  final List<CardModel> hand;
-  final List<CardModel> selectedCards;
-  final ValueChanged<CardModel> onToggleCard;
+  final List<CardModel> exchangeCards;
+  final bool isWaiting;
+  final bool isReadyToContinue;
+  final List<CardModel> receivedCards;
   final VoidCallback onConfirm;
   final VoidCallback onLeave;
 
   @override
   Widget build(BuildContext context) {
-    final selectedIds = selectedCards.map((card) => card.id).toSet();
-    final availableCards = hand
-        .where((card) => !selectedIds.contains(card.id))
-        .toList();
+    if (isWaiting) {
+      return _OverlayShell(
+        child: Column(
+          children: [
+            const _OverlayHeader(eyebrow: null, title: 'POWER SHIFT'),
+            const SizedBox(height: 12),
+            const SizedBox(
+              width: 48,
+              height: 48,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: presidentPrimary,
+              ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Waiting for ${data.counterpart.name} to send your cards',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w800),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              'The next round will start as soon as the exchange is complete.',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: presidentMuted),
+            ),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _ExchangePlayerChip(player: data.viewer, role: data.role),
+                const Icon(Icons.swap_horiz_rounded, color: presidentPrimary),
+                _ExchangePlayerChip(
+                  player: data.counterpart,
+                  role: data.counterpartRole,
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (isReadyToContinue) {
+      return _OverlayShell(
+        child: Column(
+          children: [
+            const _OverlayHeader(eyebrow: null, title: 'POWER SHIFT'),
+            Text(
+              '${data.counterpart.name} sent you these cards',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: presidentMuted),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: [
+                _ExchangePlayerChip(
+                  player: data.counterpart,
+                  role: data.counterpartRole,
+                ),
+                const Icon(
+                  Icons.arrow_downward_rounded,
+                  color: presidentPrimary,
+                ),
+                _ExchangePlayerChip(player: data.viewer, role: data.role),
+              ],
+            ),
+            const SizedBox(height: 28),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(receivedCards.length, (index) {
+                final card = receivedCards[index];
+                return Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Container(
+                    width: 84,
+                    height: 116,
+                    decoration: BoxDecoration(
+                      color: presidentSurfaceLow,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(color: presidentPrimary, width: 1.5),
+                    ),
+                    child: Center(child: _FlutterCard(card: card, scale: 1.06)),
+                  ),
+                );
+              }),
+            ),
+            const SizedBox(height: 30),
+            _ActionPillButton(
+              label: 'CONTINUE TO NEXT ROUND',
+              onPressed: onConfirm,
+              icon: Icons.chevron_right_rounded,
+            ),
+            const SizedBox(height: 14),
+            TextButton(
+              onPressed: onLeave,
+              child: const Text(
+                'LEAVE GAME',
+                style: TextStyle(
+                  color: presidentMuted,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     return _OverlayShell(
       child: Column(
         children: [
-          _OverlayHeader(eyebrow: null, title: 'POWER SHIFT', onClose: onLeave),
+          const _OverlayHeader(eyebrow: null, title: 'POWER SHIFT'),
           Text(
             data.instruction,
             textAlign: TextAlign.center,
@@ -265,78 +593,45 @@ class ExchangeOverlay extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 28),
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: List.generate(data.requiredCount, (index) {
-              final card = index < selectedCards.length
-                  ? selectedCards[index]
+              final card = index < exchangeCards.length
+                  ? exchangeCards[index]
                   : null;
               return Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: GestureDetector(
-                  onTap: card == null ? null : () => onToggleCard(card),
-                  child: Container(
-                    width: 84,
-                    height: 116,
-                    decoration: BoxDecoration(
-                      color: presidentSurfaceLow,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(
-                        color: card == null
-                            ? presidentOutlineVariant
-                            : presidentPrimary,
-                        width: 1.5,
-                      ),
+                child: Container(
+                  width: 84,
+                  height: 116,
+                  decoration: BoxDecoration(
+                    color: presidentSurfaceLow,
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: card == null
+                          ? presidentOutlineVariant
+                          : presidentPrimary,
+                      width: 1.5,
                     ),
-                    child: card == null
-                        ? const Center(
-                            child: Icon(
-                              Icons.add_rounded,
-                              color: presidentOutline,
-                              size: 30,
-                            ),
-                          )
-                        : Center(child: _FlutterCard(card: card, scale: 1.06)),
                   ),
+                  child: card == null
+                      ? const Center(
+                          child: Icon(
+                            Icons.add_rounded,
+                            color: presidentOutline,
+                            size: 30,
+                          ),
+                        )
+                      : Center(child: _FlutterCard(card: card, scale: 1.06)),
                 ),
               );
             }),
           ),
-          const SizedBox(height: 18),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: Text(
-              'YOUR ASSETS',
-              style: Theme.of(
-                context,
-              ).textTheme.labelMedium?.copyWith(letterSpacing: 1.6),
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 126,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: availableCards.length,
-              itemBuilder: (context, index) {
-                final card = availableCards[index];
-                return Padding(
-                  padding: const EdgeInsets.only(right: 10),
-                  child: GestureDetector(
-                    onTap: selectedCards.length >= data.requiredCount
-                        ? null
-                        : () => onToggleCard(card),
-                    child: _FlutterCard(card: card),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 18),
+          const SizedBox(height: 30),
           _ActionPillButton(
             label: 'CONFIRM EXCHANGE',
-            onPressed: selectedCards.length == data.requiredCount
+            onPressed: exchangeCards.length == data.requiredCount
                 ? onConfirm
                 : null,
             icon: Icons.swap_horiz_rounded,
@@ -411,29 +706,15 @@ class _OverlayShell extends StatelessWidget {
 }
 
 class _OverlayHeader extends StatelessWidget {
-  const _OverlayHeader({
-    required this.eyebrow,
-    required this.title,
-    required this.onClose,
-  });
+  const _OverlayHeader({required this.eyebrow, required this.title});
 
   final String? eyebrow;
   final String title;
-  final VoidCallback onClose;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       children: [
-        Row(
-          children: [
-            const Spacer(),
-            IconButton(
-              onPressed: onClose,
-              icon: const Icon(Icons.close_rounded, color: presidentMuted),
-            ),
-          ],
-        ),
         if (eyebrow != null)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
@@ -554,28 +835,6 @@ class _ResultRow extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (isViewer) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 3,
-                        ),
-                        decoration: BoxDecoration(
-                          color: presidentPrimary,
-                          borderRadius: BorderRadius.circular(999),
-                        ),
-                        child: const Text(
-                          'YOU',
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontWeight: FontWeight.w900,
-                            fontSize: 8,
-                            letterSpacing: 1,
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
                 ),
                 const SizedBox(height: 6),
@@ -806,20 +1065,23 @@ class _ActionPillButton extends StatelessWidget {
         minimumSize: const Size.fromHeight(58),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Text(
-            label,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.7,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.7,
+              ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Icon(icon, size: 22),
-        ],
+            const SizedBox(width: 10),
+            Icon(icon, size: 22),
+          ],
+        ),
       ),
     );
   }

@@ -1,5 +1,12 @@
 import type { GameAction, GameState, PublicGameState } from "@president/shared";
-import { createGame, executeBotTurn, fastForwardToEnd, getPublicState, submitAction } from "./presidentEngine.js";
+import {
+  createGame,
+  executeBotTurn,
+  fastForwardToEnd,
+  getPublicState,
+  startNextRoundFromResults,
+  submitAction,
+} from "./presidentEngine.js";
 
 export class GameManager {
   private state: GameState;
@@ -41,6 +48,13 @@ export class GameManager {
     console.log("[game] fastForward");
     fastForwardToEnd(this.state);
     this.logState("after_fast_forward");
+    return getPublicState(this.state, "human-1");
+  }
+
+  public startNextRound(): PublicGameState {
+    console.log("[game] startNextRound");
+    startNextRoundFromResults(this.state);
+    this.logState("after_start_next_round");
     return getPublicState(this.state, "human-1");
   }
 

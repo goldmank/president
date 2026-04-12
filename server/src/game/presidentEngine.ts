@@ -83,6 +83,15 @@ function dealCards(players: PlayerState[]): void {
   });
 }
 
+function pickExtremeCards(hand: Card[], count: number, takeBest: boolean): Card[] {
+  const ordered = sortHand(hand);
+  if (count <= 0) {
+    return [];
+  }
+
+  return takeBest ? ordered.slice(-count) : ordered.slice(0, count);
+}
+
 function findStartingPlayerId(players: PlayerState[]): string {
   const owner = players.find((player) => player.hand.some(isThreeOfClubs));
 
@@ -266,6 +275,81 @@ export function createGame(options: CreateGameOptions = {}): GameState {
   };
 
   addLog(state, `Round started. ${getPlayer(state, state.currentTurnPlayerId).name} leads first`);
+  return state;
+}
+
+function applyExchangeBetweenPlayers(
+  left: PlayerState,
+  right: PlayerState,
+  leftSendCount: number,
+  leftSendsBest: boolean,
+  rightSendCount: number,
+  rightSendsBest: boolean
+): void {
+  const leftCards = pickExtremeCards(left.hand, leftSendCount, leftSendsBest);
+  const rightCards = pickExtremeCards(right.hand, rightSendCount, rightSendsBest);
+
+  left.hand = sortHand([
+    ...left.hand.filter((card) => !leftCards.some((sent) => sent.id === card.id)),
+    ...rightCards
+  ]);
+  right.hand = sortHand([
+    ...right.hand.filter((card) => !rightCards.some((sent) => sent.id === card.id)),
+    ...leftCards
+  ]);
+}
+
+export function startNextRoundFromResults(state: GameState): GameState {
+  if (state.phase !== "finished") {
+    throw new Error("Cannot start next round before the current round is finished");
+  }
+
+  const playerCount = state.players.length;
+  const president = state.players.find((player) => player.finishingPosition === 1);
+  const vice = state.players.find((player) => player.finishingPosition === 2);
+  const viceScum = state.players.find(
+    (player) => player.finishingPosition === playerCount - 1
+  );
+  const scum = state.players.find(
+    (player) => player.finishingPosition === playerCount
+  );
+
+  state.players.forEach((player) => {
+    player.hand = [];
+    player.status = "active";
+    player.finishingPosition = undefined;
+  });
+  dealCards(state.players);
+
+  if (president && scum) {
+    applyExchangeBetweenPlayers(president, scum, 2, false, 2, true);
+    addLog(
+      state,
+      `${president.name} exchanged 2 lowest cards with ${scum.name}'s 2 highest cards`
+    );
+  }
+
+  if (vice && viceScum && vice.id !== viceScum.id) {
+    applyExchangeBetweenPlayers(vice, viceScum, 1, false, 1, true);
+    addLog(
+      state,
+      `${vice.name} exchanged 1 lowest card with ${viceScum.name}'s highest card`
+    );
+  }
+
+  state.phase = "playing";
+  state.lastSuccessfulPlayerId = null;
+  state.pile.currentSet = null;
+  state.pile.history = [];
+  state.roundActionCount = 0;
+  state.roundExpectedActions = state.players.length;
+  state.currentTurnPlayerId = findStartingPlayerId(state.players);
+  state.updatedAt = now();
+  addLog(
+    state,
+    `Round started. ${getPlayer(state, state.currentTurnPlayerId).name} leads first`
+  );
+
   return state;
 }
 
