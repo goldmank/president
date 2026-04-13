@@ -719,7 +719,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       }
 
       setState(() {
+        _showExchangeOverlay = false;
+        _showMockExchangeOverlay = false;
+        _exchangeWaiting = false;
         _exchangeReadyToContinue = false;
+        _receivedExchangeCards = <CardModel>[];
+        _busy = true;
       });
 
       try {
@@ -734,7 +739,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           return;
         }
         setState(() {
+          _showExchangeOverlay = true;
           _exchangeReadyToContinue = true;
+          _busy = false;
         });
         _showBanner(_formatError(error));
       }

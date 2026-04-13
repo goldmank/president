@@ -409,11 +409,19 @@ class ResultsOverlay extends StatelessWidget {
             title: 'The Hierarchy',
           ),
           const SizedBox(height: 16),
-          ...data.entries.map(
-            (player) => _ResultRow(
-              player: player,
-              totalPlayers: data.entries.length,
-              isViewer: player.id == data.viewer.id,
+          SizedBox(
+            height: data.entries.length > 4 ? 392 : (data.entries.length * 90),
+            child: ListView.builder(
+              padding: EdgeInsets.zero,
+              itemCount: data.entries.length,
+              itemBuilder: (context, index) {
+                final player = data.entries[index];
+                return _ResultRow(
+                  player: player,
+                  totalPlayers: data.entries.length,
+                  isViewer: player.id == data.viewer.id,
+                );
+              },
             ),
           ),
           if (data.shifts.isNotEmpty) ...[
