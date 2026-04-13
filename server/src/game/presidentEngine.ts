@@ -71,8 +71,8 @@ function createPlayers(playerCount: number, humanName: string, botPrefix: string
   return players;
 }
 
-function dealCards(players: PlayerState[]): void {
-  const deck = shuffle(createDeck());
+function dealCards(players: PlayerState[], rules: RulesConfig): void {
+  const deck = shuffle(createDeck(rules.doubleDeck ? 2 : 1));
 
   deck.forEach((card, index) => {
     players[index % players.length].hand.push(card);
@@ -276,7 +276,7 @@ export function createGame(options: CreateGameOptions = {}): GameState {
   };
   const playerCount = Math.min(Math.max(options.playerCount ?? 4, rules.minPlayers), rules.maxPlayers);
   const players = createPlayers(playerCount, options.humanName ?? "You", options.botPrefix ?? "Bot");
-  dealCards(players);
+  dealCards(players, rules);
   players.forEach((player) => {
     player.currentRole = "Citizen";
   });
@@ -348,7 +348,7 @@ export function startNextRoundFromResults(state: GameState): GameState {
     player.status = "active";
     player.finishingPosition = undefined;
   });
-  dealCards(state.players);
+  dealCards(state.players, state.rules);
 
   if (president && scum) {
     applyExchangeBetweenPlayers(president, scum, 2, false, 2, true);

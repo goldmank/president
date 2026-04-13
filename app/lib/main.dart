@@ -8,15 +8,21 @@ import 'package:flutter/services.dart';
 import 'firebase_options.dart';
 import 'src/analytics_service.dart';
 import 'src/app_shell.dart';
+import 'src/app_config.dart';
+import 'src/game_settings_service.dart';
+import 'src/user_progress_service.dart';
 
 Future<void> main() async {
   runZonedGuarded(
     () async {
       WidgetsFlutterBinding.ensureInitialized();
+      await AppConfig.load();
       await Firebase.initializeApp(
         options: DefaultFirebaseOptions.currentPlatform,
       );
       await AnalyticsService.instance.initialize();
+      await GameSettingsService.instance.initialize();
+      await UserProgressService.instance.initialize();
       FlutterError.onError = (details) {
         FlutterError.presentError(details);
         unawaited(

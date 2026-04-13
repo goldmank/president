@@ -1,5 +1,8 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
+import 'auth_service.dart';
 import 'president_theme.dart';
 
 enum AuthMode { signIn, signUp }
@@ -13,6 +16,7 @@ class AuthScreen extends StatefulWidget {
 
 class _AuthScreenState extends State<AuthScreen> {
   AuthMode _mode = AuthMode.signIn;
+  bool _busy = false;
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +80,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             const SizedBox(height: 12),
                             const Text(
-                              'EXECUTIVE STRATEGY SIMULATION',
+                              'PRESIDENT CARD GAME',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: presidentMuted,
@@ -129,7 +133,11 @@ class _AuthScreenState extends State<AuthScreen> {
                                   ],
                                   const _FieldLabel('Username'),
                                   const SizedBox(height: 8),
-                                  const _AuthInput(hint: 'CORPORATE IDENTITY'),
+                                  const _AuthInput(
+                                    hint: 'CHOOSE A USERNAME',
+                                    maxLength: 15,
+                                    allowedPattern: r'[a-zA-Z0-9_.-]',
+                                  ),
                                   const SizedBox(height: 18),
                                   const _FieldLabel('Password'),
                                   const SizedBox(height: 8),
@@ -150,8 +158,9 @@ class _AuthScreenState extends State<AuthScreen> {
                                   SizedBox(
                                     width: double.infinity,
                                     child: FilledButton(
-                                      onPressed: () =>
-                                          _showPlaceholder(context),
+                                      onPressed: _busy
+                                          ? null
+                                          : () => _showPlaceholder(context),
                                       style: FilledButton.styleFrom(
                                         backgroundColor: presidentPrimary,
                                         foregroundColor: Colors.black,
@@ -164,28 +173,36 @@ class _AuthScreenState extends State<AuthScreen> {
                                           ),
                                         ),
                                       ),
-                                      child: Text(
-                                        isSignUp
-                                            ? 'CREATE ACCOUNT'
-                                            : 'ENTER THE BOARDROOM',
-                                        style: const TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w900,
-                                          letterSpacing: 2.0,
-                                        ),
-                                      ),
+                                      child: _busy
+                                          ? const SizedBox(
+                                              width: 18,
+                                              height: 18,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Colors.black,
+                                              ),
+                                            )
+                                          : Text(
+                                              isSignUp
+                                                  ? 'CREATE ACCOUNT'
+                                                  : 'SIGN IN',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w900,
+                                                letterSpacing: 2.0,
+                                              ),
+                                            ),
                                     ),
                                   ),
                                   const SizedBox(height: 22),
-                                  const _DividerLabel(
-                                    label: 'AUTHORIZED ACCESS',
-                                  ),
+                                  const _DividerLabel(label: 'OR'),
                                   const SizedBox(height: 18),
                                   SizedBox(
                                     width: double.infinity,
                                     child: OutlinedButton.icon(
-                                      onPressed: () =>
-                                          _showGooglePlaceholder(context),
+                                      onPressed: _busy
+                                          ? null
+                                          : _continueWithGoogle,
                                       style: OutlinedButton.styleFrom(
                                         foregroundColor: presidentText,
                                         side: BorderSide.none,
@@ -276,11 +293,45 @@ class _AuthScreenState extends State<AuthScreen> {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
   }
 
-  void _showGooglePlaceholder(BuildContext context) {
-    final text = _mode == AuthMode.signUp
-        ? 'Google sign up is not wired yet.'
-        : 'Google sign in is not wired yet.';
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+  Future<void> _continueWithGoogle() async {
+    setState(() {
+      _busy = true;
+    });
+
+    try {
+      final credential = await AuthService.instance.signInWithGoogle();
+      if (!mounted) {
+        return;
+      }
+      if (credential == null) {
+        setState(() {
+          _busy = false;
+        });
+        return;
+      }
+      Navigator.of(context).maybePop();
+    } on FirebaseAuthException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _busy = false;
+      });
+      final message = error.message ?? 'Unable to continue with Google.';
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(message)));
+    } catch (_) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _busy = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to continue with Google.')),
+      );
+    }
   }
 }
 
@@ -376,15 +427,32 @@ class _FieldLabel extends StatelessWidget {
 }
 
 class _AuthInput extends StatelessWidget {
-  const _AuthInput({required this.hint, this.obscureText = false});
+  const _AuthInput({
+    required this.hint,
+    this.obscureText = false,
+    this.maxLength,
+    this.allowedPattern,
+  });
 
   final String hint;
   final bool obscureText;
+  final int? maxLength;
+  final String? allowedPattern;
 
   @override
   Widget build(BuildContext context) {
     return TextField(
       obscureText: obscureText,
+      maxLength: maxLength,
+      maxLengthEnforcement: MaxLengthEnforcement.enforced,
+      autocorrect: false,
+      enableSuggestions: !obscureText,
+      textCapitalization: TextCapitalization.none,
+      inputFormatters: <TextInputFormatter>[
+        if (allowedPattern != null)
+          FilteringTextInputFormatter.allow(RegExp(allowedPattern!)),
+        if (maxLength != null) LengthLimitingTextInputFormatter(maxLength),
+      ],
       style: const TextStyle(
         color: presidentText,
         fontSize: 18,
@@ -400,6 +468,7 @@ class _AuthInput extends StatelessWidget {
         filled: true,
         fillColor: Colors.transparent,
         contentPadding: const EdgeInsets.symmetric(vertical: 12),
+        counterText: '',
         enabledBorder: const UnderlineInputBorder(
           borderSide: BorderSide(color: presidentOutlineVariant),
         ),

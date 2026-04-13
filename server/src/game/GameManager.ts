@@ -1,3 +1,4 @@
+import type { RulesConfig } from "@president/shared";
 import type { GameAction, GameState, PublicGameState } from "@president/shared";
 import {
   createGame,
@@ -16,9 +17,14 @@ export class GameManager {
     this.logState("initialized");
   }
 
-  public createNewGame(playerCount?: number): PublicGameState {
-    this.state = createGame({ playerCount });
-    console.log(`[game] createNewGame playerCount=${playerCount ?? "default"}`);
+  public createNewGame(
+    playerCount?: number,
+    rules?: Partial<RulesConfig>
+  ): PublicGameState {
+    this.state = createGame({ playerCount, rules });
+    console.log(
+      `[game] createNewGame playerCount=${playerCount ?? "default"} rules=${JSON.stringify(rules ?? {})}`
+    );
     this.logState("new_game");
     return getPublicState(this.state, "human-1");
   }

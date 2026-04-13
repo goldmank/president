@@ -1,10 +1,18 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
+import 'app_config.dart';
 import 'auth_screen.dart';
+import 'auth_service.dart';
 import 'game_screen.dart';
 import 'president_theme.dart';
+import 'settings_screen.dart';
+import 'tutorial_screen.dart';
+import 'user_progress.dart';
+import 'user_progress_service.dart';
 
 class LobbyScreen extends StatefulWidget {
   const LobbyScreen({super.key});
@@ -15,31 +23,65 @@ class LobbyScreen extends StatefulWidget {
 
 class _LobbyScreenState extends State<LobbyScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+  final ScrollController _scrollController = ScrollController();
   int _selectedTab = 0;
-  int _debugScoreBonus = 0;
+  User? _user;
+  StreamSubscription<User?>? _authSubscription;
+  VoidCallback? _progressListener;
 
-  final _GuestProfile _profile = const _GuestProfile(
-    name: 'Guest',
-    gamesPlayed: 0,
-    roleHistory: <String>[],
-  );
+  @override
+  void initState() {
+    super.initState();
+    _user = AuthService.instance.currentUser;
+    _authSubscription = AuthService.instance.authStateChanges().listen((
+      User? user,
+    ) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _user = user;
+      });
+    });
+    _progressListener = () {
+      if (!mounted) {
+        return;
+      }
+      setState(() {});
+    };
+    UserProgressService.instance.addListener(_progressListener!);
+  }
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    if (_progressListener != null) {
+      UserProgressService.instance.removeListener(_progressListener!);
+    }
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
-    final score =
-        _profile.roleHistory.fold<int>(
-          0,
-          (sum, role) => sum + _rolePoints(role),
-        ) +
-        _debugScoreBonus;
+    final progressData = UserProgressService.instance.currentProgress;
+    final score = progressData.score;
     final rank = _rankForScore(score);
+    final profileName = (_user?.displayName?.trim().isNotEmpty ?? false)
+        ? _user!.displayName!.trim()
+        : 'Guest';
+    final avatarUrl = _user?.photoURL;
 
     return Scaffold(
       key: _scaffoldKey,
       drawer: _LobbyDrawer(
-        debugScoreBonus: _debugScoreBonus,
+        isSignedIn: _user != null,
+        debugScoreBonus: progressData.debugScoreBonus,
+        onOpenTutorial: _openTutorial,
+        onOpenSettings: _openSettings,
         onAddScore: _adjustDebugScore,
         onResetScore: _resetDebugScore,
+        onLogout: _logout,
       ),
       body: Container(
         decoration: const BoxDecoration(
@@ -59,6 +101,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
             children: <Widget>[
               Expanded(
                 child: CustomScrollView(
+                  controller: _scrollController,
                   slivers: <Widget>[
                     SliverToBoxAdapter(
                       child: Padding(
@@ -70,10 +113,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
                               onMenuPressed: () {
                                 _scaffoldKey.currentState?.openDrawer();
                               },
+                              avatarUrl: avatarUrl,
                             ),
                             const SizedBox(height: 18),
                             _ProfilePanel(
-                              profile: _profile,
+                              profileName: profileName,
+                              progressData: progressData,
                               score: score,
                               rank: rank,
                             ),
@@ -133,27 +178,67 @@ class _LobbyScreenState extends State<LobbyScreen> {
         builder: (BuildContext context) => const AuthScreen(),
       ),
     );
+    if (!mounted) {
+      return;
+    }
+    if (_scrollController.hasClients) {
+      await _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    }
+  }
+
+  Future<void> _openTutorial() async {
+    Navigator.of(context).maybePop();
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const TutorialScreen(),
+      ),
+    );
+  }
+
+  Future<void> _openSettings() async {
+    Navigator.of(context).maybePop();
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const SettingsScreen(),
+      ),
+    );
   }
 
   void _adjustDebugScore(int amount) {
     Navigator.of(context).maybePop();
-    setState(() {
-      _debugScoreBonus += amount;
-    });
+    unawaited(UserProgressService.instance.addDebugScore(amount));
   }
 
   void _resetDebugScore() {
     Navigator.of(context).maybePop();
-    setState(() {
-      _debugScoreBonus = 0;
-    });
+    unawaited(UserProgressService.instance.resetDebugScore());
+  }
+
+  Future<void> _logout() async {
+    Navigator.of(context).maybePop();
+    await AuthService.instance.signOut();
+    if (!mounted) {
+      return;
+    }
+    if (_scrollController.hasClients) {
+      await _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      );
+    }
   }
 }
 
 class _TopBar extends StatelessWidget {
-  const _TopBar({required this.onMenuPressed});
+  const _TopBar({required this.onMenuPressed, this.avatarUrl});
 
   final VoidCallback onMenuPressed;
+  final String? avatarUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -175,7 +260,7 @@ class _TopBar extends StatelessWidget {
             ),
           ),
         ),
-        const _ProfileAvatar(size: 48),
+        _ProfileAvatar(size: 48, photoUrl: avatarUrl),
       ],
     );
   }
@@ -183,14 +268,22 @@ class _TopBar extends StatelessWidget {
 
 class _LobbyDrawer extends StatelessWidget {
   const _LobbyDrawer({
+    required this.isSignedIn,
     required this.debugScoreBonus,
+    required this.onOpenTutorial,
+    required this.onOpenSettings,
     required this.onAddScore,
     required this.onResetScore,
+    required this.onLogout,
   });
 
+  final bool isSignedIn;
   final int debugScoreBonus;
+  final Future<void> Function() onOpenTutorial;
+  final Future<void> Function() onOpenSettings;
   final ValueChanged<int> onAddScore;
   final VoidCallback onResetScore;
+  final Future<void> Function() onLogout;
 
   @override
   Widget build(BuildContext context) {
@@ -227,7 +320,21 @@ class _LobbyDrawer extends StatelessWidget {
               ),
             ),
             const Divider(color: presidentOutlineVariant, height: 1),
-            if (kDebugMode) ...<Widget>[
+            _DrawerAction(
+              icon: Icons.school_rounded,
+              label: 'Tutorial',
+              onTap: () {
+                onOpenTutorial();
+              },
+            ),
+            _DrawerAction(
+              icon: Icons.settings_rounded,
+              label: 'Settings',
+              onTap: () {
+                onOpenSettings();
+              },
+            ),
+            if (AppConfig.instance.isDev) ...<Widget>[
               Padding(
                 padding: const EdgeInsets.fromLTRB(20, 18, 20, 10),
                 child: Text(
@@ -266,7 +373,7 @@ class _LobbyDrawer extends StatelessWidget {
                 onTap: onResetScore,
               ),
             ],
-            if (!kDebugMode)
+            if (!AppConfig.instance.isDev)
               const Padding(
                 padding: EdgeInsets.all(20),
                 child: Text(
@@ -278,6 +385,18 @@ class _LobbyDrawer extends StatelessWidget {
                   ),
                 ),
               ),
+            const Spacer(),
+            if (isSignedIn) ...<Widget>[
+              const Divider(color: presidentOutlineVariant, height: 1),
+              _DrawerAction(
+                icon: Icons.logout_rounded,
+                label: 'Logout',
+                onTap: () {
+                  onLogout();
+                },
+              ),
+              const SizedBox(height: 12),
+            ],
           ],
         ),
       ),
@@ -315,24 +434,22 @@ class _DrawerAction extends StatelessWidget {
 
 class _ProfilePanel extends StatelessWidget {
   const _ProfilePanel({
-    required this.profile,
+    required this.profileName,
+    required this.progressData,
     required this.score,
     required this.rank,
   });
 
-  final _GuestProfile profile;
+  final String profileName;
+  final UserProgress progressData;
   final int score;
   final _RankProgress rank;
 
   @override
   Widget build(BuildContext context) {
     final progress = rank.goal <= 0 ? 0.0 : (score / rank.goal).clamp(0.0, 1.0);
-    final presidentGames = profile.roleHistory
-        .where((String role) => role == 'President')
-        .length;
-    final scumGames = profile.roleHistory
-        .where((String role) => role == 'Scum')
-        .length;
+    final presidentGames = progressData.presidentGames;
+    final scumGames = progressData.scumGames;
 
     return Container(
       decoration: BoxDecoration(
@@ -360,7 +477,9 @@ class _ProfilePanel extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 Text(
-                  profile.name.toUpperCase(),
+                  profileName.toUpperCase(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: presidentText,
                     fontSize: 36,
@@ -404,7 +523,7 @@ class _ProfilePanel extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 20),
-                _GamesPlayedPanel(gamesPlayed: profile.gamesPlayed),
+                _GamesPlayedPanel(gamesPlayed: progressData.gamesPlayed),
                 const SizedBox(height: 12),
                 Row(
                   children: <Widget>[
@@ -1088,9 +1207,10 @@ class _AchievementTile extends StatelessWidget {
 }
 
 class _ProfileAvatar extends StatelessWidget {
-  const _ProfileAvatar({required this.size});
+  const _ProfileAvatar({required this.size, this.photoUrl});
 
   final double size;
+  final String? photoUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -1102,28 +1222,18 @@ class _ProfileAvatar extends StatelessWidget {
         color: presidentSurfaceContainer,
       ),
       clipBehavior: Clip.antiAlias,
-      child: FittedBox(
-        fit: BoxFit.cover,
-        child: SizedBox(
-          width: size * 1.22,
-          height: size * 1.22,
-          child: SvgPicture.asset('assets/default_avatar.svg'),
-        ),
-      ),
+      child: photoUrl != null && photoUrl!.isNotEmpty
+          ? Image.network(photoUrl!, fit: BoxFit.cover)
+          : FittedBox(
+              fit: BoxFit.cover,
+              child: SizedBox(
+                width: size * 1.22,
+                height: size * 1.22,
+                child: SvgPicture.asset('assets/default_avatar.svg'),
+              ),
+            ),
     );
   }
-}
-
-class _GuestProfile {
-  const _GuestProfile({
-    required this.name,
-    required this.gamesPlayed,
-    required this.roleHistory,
-  });
-
-  final String name;
-  final int gamesPlayed;
-  final List<String> roleHistory;
 }
 
 class _RankProgress {
@@ -1138,17 +1248,6 @@ class _RankProgress {
   final String name;
   final int goal;
   final String nextName;
-}
-
-int _rolePoints(String role) {
-  return switch (role) {
-    'President' => 10,
-    'Vice' => 8,
-    'Citizen' => 5,
-    'Vice Scum' => 2,
-    'Scum' => 1,
-    _ => 0,
-  };
 }
 
 _RankProgress _rankForScore(int score) {

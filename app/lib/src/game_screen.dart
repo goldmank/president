@@ -1,16 +1,18 @@
 import 'dart:async';
 import 'dart:math' as math;
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import 'app_config.dart';
 import 'analytics_service.dart';
 import 'card_asset.dart';
 import 'game_api.dart';
+import 'game_settings_service.dart';
 import 'game_overlays.dart';
 import 'models.dart';
 import 'president_theme.dart';
+import 'user_progress_service.dart';
 
 class GameScreen extends StatefulWidget {
   const GameScreen({super.key});
@@ -28,6 +30,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   final Map<String, Timer> _passBubbleTimers = <String, Timer>{};
   final List<_CardFlight> _cardFlights = <_CardFlight>[];
   List<CardModel> _lastKnownViewerHand = <CardModel>[];
+  String? _recordedFinishedGameId;
 
   PublicGameStateModel? _state;
   bool _loading = true;
@@ -113,13 +116,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _exchangeWaiting = false;
       _exchangeReadyToContinue = false;
       _receivedExchangeCards = <CardModel>[];
+      _recordedFinishedGameId = null;
       _selectedCardIds.clear();
       _animatingViewerCardIds.clear();
       _clearFlights();
     });
 
     try {
-      final state = await _api.createGame(playerCount: playerCount);
+      final settings = GameSettingsService.instance.currentSettings;
+      final state = await _api.createGame(
+        playerCount: playerCount,
+        rules: <String, dynamic>{'doubleDeck': settings.doubleDeck},
+      );
       if (!mounted) {
         return;
       }
@@ -163,13 +171,18 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _exchangeWaiting = false;
       _exchangeReadyToContinue = false;
       _receivedExchangeCards = <CardModel>[];
+      _recordedFinishedGameId = null;
       _selectedCardIds.clear();
       _animatingViewerCardIds.clear();
       _clearFlights();
     });
 
     try {
-      await _api.createGame(playerCount: playerCount);
+      final settings = GameSettingsService.instance.currentSettings;
+      await _api.createGame(
+        playerCount: playerCount,
+        rules: <String, dynamic>{'doubleDeck': settings.doubleDeck},
+      );
       await _api.fastForwardGame();
       final state = await _api.startNextRound();
       if (!mounted) {
@@ -286,6 +299,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (previous != null &&
         previous.phase != GamePhase.finished &&
         next.phase == GamePhase.finished) {
+      final role = awardedRoleLabel(next.viewer, next.players.length);
+      if (_recordedFinishedGameId != next.id) {
+        _recordedFinishedGameId = next.id;
+        unawaited(UserProgressService.instance.recordFinishedGame(role));
+      }
       unawaited(_analytics.logGameFinished(previous, next));
       unawaited(_analytics.logRoleProgressionReady(previous, next));
     }
@@ -1134,7 +1152,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           left: 0,
           child: _LeaveGameButton(onPressed: _confirmExitGame),
         ),
-        if (kDebugMode)
+        if (AppConfig.instance.isDev)
           Positioned(
             top: 0,
             right: 0,

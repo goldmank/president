@@ -2,25 +2,28 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'app_config.dart';
 import 'models.dart';
 
 class GameApi {
   GameApi({http.Client? client}) : _client = client ?? http.Client();
-  static const String _baseUrl = 'https://assad.ngrok.dev';
 
   final http.Client _client;
 
-  Uri _uri(String path) => Uri.parse('$_baseUrl$path');
+  Uri _uri(String path) =>
+      Uri.parse('${AppConfig.instance.serverEndpoint}$path');
 
-  Future<PublicGameStateModel> createGame({int? playerCount}) async {
+  Future<PublicGameStateModel> createGame({
+    int? playerCount,
+    Map<String, dynamic>? rules,
+  }) async {
     final response = await _client.post(
       _uri('/game'),
       headers: _headers,
-      body: jsonEncode(
-        playerCount == null
-            ? <String, dynamic>{}
-            : <String, dynamic>{'playerCount': playerCount},
-      ),
+      body: jsonEncode(<String, dynamic>{
+        if (playerCount case final int count) 'playerCount': count,
+        if (rules case final Map<String, dynamic> value) 'rules': value,
+      }),
     );
     return _decodeState(response);
   }

@@ -60,35 +60,38 @@ export function compareCards(a: Card, b: Card): number {
   return suitSortOrder[a.suit] - suitSortOrder[b.suit];
 }
 
-export function createDeck(): Card[] {
+export function createDeck(copies = 1): Card[] {
   const deck: Card[] = [];
 
-  for (const rank of rankValues) {
-    if (rank === 16) {
-      continue;
+  for (let copyIndex = 0; copyIndex < copies; copyIndex += 1) {
+    const copySuffix = copyIndex == 0 ? "" : `-copy-${copyIndex + 1}`;
+    for (const rank of rankValues) {
+      if (rank === 16) {
+        continue;
+      }
+
+      for (const suit of suits) {
+        deck.push({
+          id: `${rank}-${suit}${copySuffix}`,
+          rank,
+          suit
+        });
+      }
     }
 
-    for (const suit of suits) {
-      deck.push({
-        id: `${rank}-${suit}`,
-        rank,
-        suit
-      });
-    }
+    deck.push(
+      {
+        id: `16-joker-1${copySuffix}`,
+        rank: 16,
+        suit: "joker"
+      },
+      {
+        id: `16-joker-2${copySuffix}`,
+        rank: 16,
+        suit: "joker"
+      }
+    );
   }
-
-  deck.push(
-    {
-      id: "16-joker-1",
-      rank: 16,
-      suit: "joker"
-    },
-    {
-      id: "16-joker-2",
-      rank: 16,
-      suit: "joker"
-    }
-  );
 
   return deck;
 }

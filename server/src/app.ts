@@ -34,7 +34,9 @@ export function createApp(): express.Express {
   });
 
   app.post("/game", (request, response) => {
-    response.json(games.createNewGame(request.body?.playerCount));
+    response.json(
+      games.createNewGame(request.body?.playerCount, request.body?.rules)
+    );
   });
 
   app.get("/game", (_request, response) => {
