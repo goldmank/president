@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'game_screen.dart';
+import 'lobby_screen.dart';
 import 'president_theme.dart';
 
 class PresidentApp extends StatelessWidget {
@@ -12,7 +12,7 @@ class PresidentApp extends StatelessWidget {
       title: 'President',
       debugShowCheckedModeBanner: false,
       theme: buildPresidentTheme(),
-      home: const GameScreen(),
+      home: const LobbyScreen(),
     );
   }
 }
