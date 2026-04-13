@@ -950,6 +950,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     const tableCenterOffsetY = 0.0;
     const seatCenterOffsetX = -10.0;
     const seatCenterOffsetY = 0.0;
+    const seatRadiusOffset = 20.0;
     const handBottomGap = 44.0;
     const buttonLift = 84.0;
     final compactHeight = size.height < 760;
@@ -978,7 +979,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           size.width * 0.39,
           size.height * (compactHeight ? 0.215 : 0.24),
         ) +
-        16 * uiScale;
+        seatRadiusOffset * uiScale;
     final handTop = _clampDouble(
       size.height - handHeight - handBottomGap,
       tableCenterY + 126,
