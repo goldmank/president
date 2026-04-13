@@ -65,7 +65,7 @@ flutter:
     - assets/cards/white/
     - assets/default_avatar.svg
     - assets/joker.png
-    - assets/bg.png
+    - assets/bg.jpg
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

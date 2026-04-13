@@ -98,7 +98,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
-  Future<void> _loadGame() async {
+  Future<void> _loadGame({int? playerCount}) async {
     _bannerTimer?.cancel();
     _botTimer?.cancel();
     setState(() {
@@ -118,7 +118,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
 
     try {
-      final state = await _api.createGame();
+      final state = await _api.createGame(playerCount: playerCount);
       if (!mounted) {
         return;
       }
@@ -881,6 +881,16 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           });
           _showBanner(_formatError(error));
         }
+      case _DebugMenuAction.newGame4Players:
+        await _loadGame(playerCount: 4);
+      case _DebugMenuAction.newGame5Players:
+        await _loadGame(playerCount: 5);
+      case _DebugMenuAction.newGame6Players:
+        await _loadGame(playerCount: 6);
+      case _DebugMenuAction.newGame7Players:
+        await _loadGame(playerCount: 7);
+      case _DebugMenuAction.newGame8Players:
+        await _loadGame(playerCount: 8);
     }
   }
 
@@ -890,7 +900,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       body: Container(
         decoration: const BoxDecoration(
           image: DecorationImage(
-            image: AssetImage('assets/bg.png'),
+            image: AssetImage('assets/bg.jpg'),
             fit: BoxFit.cover,
           ),
         ),
@@ -936,6 +946,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     EdgeInsets layoutInsets,
   ) {
     const layoutShiftY = 18.0;
+    const tableCenterOffsetX = 0.0;
+    const tableCenterOffsetY = 0.0;
+    const seatCenterOffsetX = -10.0;
+    const seatCenterOffsetY = 0.0;
     const handBottomGap = 44.0;
     const buttonLift = 84.0;
     final compactHeight = size.height < 760;
@@ -951,11 +965,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       132,
       size.height - handHeight - 214,
     );
-    final tableCenter = Offset(size.width / 2, tableCenterY);
-    final seatRadius = math.min(
-      size.width * 0.39,
-      size.height * (compactHeight ? 0.215 : 0.24),
+    final tableCenter = Offset(
+      (size.width / 2) + tableCenterOffsetX,
+      tableCenterY + tableCenterOffsetY,
     );
+    final seatOrbitCenter = Offset(
+      tableCenter.dx + seatCenterOffsetX,
+      tableCenter.dy + seatCenterOffsetY,
+    );
+    final seatRadius =
+        math.min(
+          size.width * 0.39,
+          size.height * (compactHeight ? 0.215 : 0.24),
+        ) +
+        16 * uiScale;
     final handTop = _clampDouble(
       size.height - handHeight - handBottomGap,
       tableCenterY + 126,
@@ -967,6 +990,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       size: size,
       uiScale: uiScale,
       tableCenter: tableCenter,
+      seatOrbitCenter: seatOrbitCenter,
       seatRadius: seatRadius,
       handRect: handRect,
       buttonCenter: buttonCenter,
@@ -1115,7 +1139,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       state.players,
       index,
       state.viewerPlayerId,
-      layout.tableCenter,
+      layout.seatOrbitCenter,
       layout.seatRadius,
     );
     final isViewer = player.id == state.viewerPlayerId;
@@ -1128,6 +1152,21 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final widgetHeight = (isViewer ? 142.0 : 154.0) * layout.uiScale;
     final avatarSize = (isViewer ? 74.0 : 68.0) * layout.uiScale;
     final topOffset = isViewer ? 34.0 * layout.uiScale : 0.0;
+    final seatInward = Offset(
+      math.cos(angle + math.pi),
+      math.sin(angle + math.pi),
+    );
+    final fanSize = Size(94 * layout.uiScale, 46 * layout.uiScale);
+    final clusterSize = isViewer
+        ? avatarSize
+        : avatarSize + (76 * layout.uiScale);
+    final avatarLeft = (clusterSize - avatarSize) / 2;
+    final avatarTop = (clusterSize - avatarSize) / 2;
+    final avatarCenter = Offset(
+      avatarLeft + avatarSize / 2,
+      avatarTop + avatarSize / 2,
+    );
+    final fanCenter = avatarCenter + seatInward * (avatarSize * 0.82);
 
     return Positioned(
       left: center.dx - widgetWidth / 2,
@@ -1150,83 +1189,135 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 mainAxisSize: MainAxisSize.min,
                 children: <Widget>[
                   SizedBox(
-                    width: avatarSize,
-                    height: avatarSize,
+                    width: clusterSize,
+                    height: clusterSize,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: <Widget>[
-                        Container(
-                          width: avatarSize,
-                          height: avatarSize,
-                          decoration: BoxDecoration(
-                            shape: BoxShape.circle,
-                            border: Border.all(
-                              color: isActive
-                                  ? presidentPrimary
-                                  : presidentOutlineVariant,
-                              width: isActive ? 2.5 : 1.5,
+                        if (!isViewer && player.handCount > 0)
+                          Positioned(
+                            left: fanCenter.dx - fanSize.width / 2,
+                            top: fanCenter.dy - fanSize.height / 2,
+                            child: _OpponentFan(
+                              count: player.handCount,
+                              directionAngle: angle + math.pi,
+                              scale: layout.uiScale,
                             ),
-                            color: _parseColor(player.avatarColor),
-                            boxShadow: isActive
-                                ? <BoxShadow>[
-                                    BoxShadow(
-                                      color: presidentPrimary.withValues(
-                                        alpha: 0.22,
-                                      ),
-                                      blurRadius: 18,
-                                      spreadRadius: 2,
-                                    ),
-                                  ]
-                                : const <BoxShadow>[],
                           ),
-                          child: ClipOval(
-                            child: Transform.scale(
-                              scale: 1.24,
-                              child: SvgPicture.asset(
-                                'assets/default_avatar.svg',
-                                fit: BoxFit.cover,
-                                colorFilter: ColorFilter.mode(
-                                  isActive
-                                      ? Colors.white
-                                      : presidentSurfaceLowest,
-                                  BlendMode.srcIn,
+                        Positioned(
+                          left: avatarLeft,
+                          top: avatarTop,
+                          child: Container(
+                            width: avatarSize,
+                            height: avatarSize,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: isActive
+                                    ? presidentPrimary
+                                    : presidentOutlineVariant,
+                                width: isActive ? 2.5 : 1.5,
+                              ),
+                              color: _parseColor(player.avatarColor),
+                              boxShadow: isActive
+                                  ? <BoxShadow>[
+                                      BoxShadow(
+                                        color: presidentPrimary.withValues(
+                                          alpha: 0.22,
+                                        ),
+                                        blurRadius: 18,
+                                        spreadRadius: 2,
+                                      ),
+                                    ]
+                                  : const <BoxShadow>[],
+                            ),
+                            child: ClipOval(
+                              child: Transform.scale(
+                                scale: 1.24,
+                                child: SvgPicture.asset(
+                                  'assets/default_avatar.svg',
+                                  fit: BoxFit.cover,
+                                  colorFilter: ColorFilter.mode(
+                                    isActive
+                                        ? Colors.white
+                                        : presidentSurfaceLowest,
+                                    BlendMode.srcIn,
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
                         Positioned(
-                          top: 2 * layout.uiScale,
-                          right: 2 * layout.uiScale,
+                          top: avatarTop + 2 * layout.uiScale,
+                          left: avatarLeft + avatarSize - (20 * layout.uiScale),
                           child: _SeatRoleBadge(
                             role: role,
                             scale: layout.uiScale,
                           ),
                         ),
+                        if (!isViewer)
+                          Positioned(
+                            left: 30 * layout.uiScale,
+                            right: 0,
+                            top: avatarTop + avatarSize - (6 * layout.uiScale),
+                            child: Center(
+                              child: Container(
+                                constraints: BoxConstraints(
+                                  minWidth: 68 * layout.uiScale,
+                                  maxWidth: avatarSize + (18 * layout.uiScale),
+                                ),
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: 10 * layout.uiScale,
+                                  vertical: 5 * layout.uiScale,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: presidentSurfaceContainer.withValues(
+                                    alpha: 0.94,
+                                  ),
+                                  borderRadius: BorderRadius.circular(999),
+                                  border: Border.all(
+                                    color: presidentOutlineVariant.withValues(
+                                      alpha: 0.38,
+                                    ),
+                                  ),
+                                ),
+                                child: Text(
+                                  player.name,
+                                  textAlign: TextAlign.center,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: TextStyle(
+                                    color: presidentText,
+                                    fontSize: 11.5 * layout.uiScale,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
                       ],
                     ),
                   ),
                   const SizedBox(height: 8),
-                  SizedBox(
-                    width: widgetWidth,
-                    child: Text(
-                      player.name,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: presidentText,
-                        fontSize: (isViewer ? 13.0 : 12.0) * layout.uiScale,
-                        fontWeight: FontWeight.w700,
+                  if (isViewer)
+                    SizedBox(
+                      width: widgetWidth,
+                      child: Text(
+                        player.name,
+                        textAlign: TextAlign.center,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: presidentText,
+                          fontSize: 13.0 * layout.uiScale,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
-                    ),
-                  ),
-                  if (!isViewer && player.handCount > 0) ...<Widget>[
-                    const SizedBox(height: 8),
-                    _OpponentFan(
-                      count: player.handCount,
-                      directionAngle: angle + math.pi,
-                    ),
+                    )
+                  else
+                    SizedBox(height: 20 * layout.uiScale),
+                  if (!isViewer)
                     AnimatedOpacity(
                       opacity: _passBubbleVisible[player.id] == true ? 1 : 0,
                       duration: const Duration(milliseconds: 240),
@@ -1265,7 +1356,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                         ),
                       ),
                     ),
-                  ],
                 ],
               ),
             ),
@@ -1475,6 +1565,11 @@ enum _DebugMenuAction {
   toggleMockResults,
   toggleMockExchange,
   fastForwardMatch,
+  newGame4Players,
+  newGame5Players,
+  newGame6Players,
+  newGame7Players,
+  newGame8Players,
 }
 
 class _DebugMenuButton extends StatelessWidget {
@@ -1522,6 +1617,32 @@ class _DebugMenuButton extends StatelessWidget {
               value: _DebugMenuAction.fastForwardMatch,
               enabled: !busy,
               child: const Text('Fast-forward Match'),
+            ),
+            const PopupMenuDivider(),
+            PopupMenuItem<_DebugMenuAction>(
+              value: _DebugMenuAction.newGame4Players,
+              enabled: !busy,
+              child: const Text('New Game: 4 Players'),
+            ),
+            PopupMenuItem<_DebugMenuAction>(
+              value: _DebugMenuAction.newGame5Players,
+              enabled: !busy,
+              child: const Text('New Game: 5 Players'),
+            ),
+            PopupMenuItem<_DebugMenuAction>(
+              value: _DebugMenuAction.newGame6Players,
+              enabled: !busy,
+              child: const Text('New Game: 6 Players'),
+            ),
+            PopupMenuItem<_DebugMenuAction>(
+              value: _DebugMenuAction.newGame7Players,
+              enabled: !busy,
+              child: const Text('New Game: 7 Players'),
+            ),
+            PopupMenuItem<_DebugMenuAction>(
+              value: _DebugMenuAction.newGame8Players,
+              enabled: !busy,
+              child: const Text('New Game: 8 Players'),
             ),
           ],
         ),
@@ -1833,45 +1954,57 @@ class _AnimatedFlightCard extends StatelessWidget {
 }
 
 class _OpponentFan extends StatelessWidget {
-  const _OpponentFan({required this.count, required this.directionAngle});
+  const _OpponentFan({
+    required this.count,
+    required this.directionAngle,
+    this.scale = 1,
+  });
 
   final int count;
   final double directionAngle;
+  final double scale;
 
   @override
   Widget build(BuildContext context) {
     final visible = math.min(count, 5);
-    return SizedBox(
-      width: 94,
-      height: 46,
-      child: Stack(
-        alignment: Alignment.center,
-        children: <Widget>[
-          for (var index = 0; index < visible; index++)
-            Transform.translate(
-              offset: Offset((index - (visible - 1) / 2) * 10, 0),
-              child: Transform.rotate(
-                angle: directionAngle + ((index - (visible - 1) / 2) * 0.08),
-                child: Container(
-                  width: 27,
-                  height: 38,
-                  decoration: BoxDecoration(
-                    color: presidentSurfaceHigh,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: presidentOutlineVariant.withValues(alpha: 0.5),
+    final fanRotation = directionAngle + (math.pi / 2);
+    final width = 94 * scale;
+    final height = 52 * scale;
+
+    return Transform.rotate(
+      angle: fanRotation,
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Stack(
+          alignment: Alignment.bottomCenter,
+          children: <Widget>[
+            for (var index = 0; index < visible; index++)
+              Transform.translate(
+                offset: Offset((index - (visible - 1) / 2) * 10 * scale, 0),
+                child: Transform.rotate(
+                  angle: ((index - (visible - 1) / 2) * 0.08),
+                  child: Container(
+                    width: 27 * scale,
+                    height: 38 * scale,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8F5EE),
+                      borderRadius: BorderRadius.circular(6 * scale),
+                      border: Border.all(
+                        color: presidentSurfaceHighest.withValues(alpha: 0.35),
+                      ),
                     ),
-                  ),
-                  alignment: Alignment.center,
-                  child: const Icon(
-                    Icons.star_rounded,
-                    size: 12,
-                    color: presidentPrimary,
+                    alignment: Alignment.center,
+                    child: Icon(
+                      Icons.star_rounded,
+                      size: 12 * scale,
+                      color: presidentPrimaryDark,
+                    ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1921,6 +2054,7 @@ class _LayoutSnapshot {
     required this.size,
     required this.uiScale,
     required this.tableCenter,
+    required this.seatOrbitCenter,
     required this.seatRadius,
     required this.handRect,
     required this.buttonCenter,
@@ -1929,6 +2063,7 @@ class _LayoutSnapshot {
   final Size size;
   final double uiScale;
   final Offset tableCenter;
+  final Offset seatOrbitCenter;
   final double seatRadius;
   final Rect handRect;
   final Offset buttonCenter;
