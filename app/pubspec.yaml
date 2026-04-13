@@ -66,6 +66,12 @@ flutter:
     - assets/default_avatar.svg
     - assets/joker.png
     - assets/bg.jpg
+    - assets/crown.svg
+    - assets/award_star.svg
+    - assets/military_tech.svg
+    - assets/skull.svg
+    - assets/stat_minus_2.svg
+    - assets/sentiment_content.svg
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

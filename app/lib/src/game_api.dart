@@ -72,13 +72,53 @@ class GameApi {
   };
 
   PublicGameStateModel _decodeState(http.Response response) {
-    final payload = jsonDecode(response.body) as Object?;
+    final payload = _tryDecodeJson(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final message = payload is Map<String, dynamic>
           ? payload['error'] as String?
-          : null;
-      throw Exception(message ?? 'Request failed with ${response.statusCode}');
+          : _fallbackErrorMessage(response);
+      throw Exception(message ?? _fallbackErrorMessage(response));
     }
-    return PublicGameStateModel.fromJson(payload as Map<String, dynamic>);
+    if (payload is! Map<String, dynamic>) {
+      throw Exception(
+        'Invalid server response (${response.statusCode}): '
+        '${_compactBody(response.body)}',
+      );
+    }
+    return PublicGameStateModel.fromJson(payload);
+  }
+
+  Object? _tryDecodeJson(String body) {
+    final trimmed = body.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final startsLikeJson =
+        trimmed.startsWith('{') ||
+        trimmed.startsWith('[') ||
+        trimmed == 'null' ||
+        trimmed == 'true' ||
+        trimmed == 'false' ||
+        RegExp(r'^-?\d').hasMatch(trimmed);
+    if (!startsLikeJson) {
+      return null;
+    }
+    try {
+      return jsonDecode(trimmed);
+    } on FormatException {
+      return null;
+    }
+  }
+
+  String _fallbackErrorMessage(http.Response response) {
+    final body = _compactBody(response.body);
+    if (body.isNotEmpty) {
+      return 'Request failed with ${response.statusCode}: $body';
+    }
+    return 'Request failed with ${response.statusCode}';
+  }
+
+  String _compactBody(String body) {
+    return body.trim().replaceAll(RegExp(r'\s+'), ' ');
   }
 }

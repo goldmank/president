@@ -108,6 +108,28 @@ function getPlayer(state: GameState, playerId: string): PlayerState {
   return player;
 }
 
+function roleForFinishingPosition(
+  finishingPosition: number | undefined,
+  playerCount: number
+): string | undefined {
+  if (finishingPosition === 1) {
+    return "President";
+  }
+  if (finishingPosition === 2) {
+    return "Vice";
+  }
+  if (finishingPosition === playerCount - 1) {
+    return "Vice Scum";
+  }
+  if (finishingPosition === playerCount) {
+    return "Scum";
+  }
+  if (finishingPosition != null) {
+    return "Citizen";
+  }
+  return undefined;
+}
+
 function getActivePlayers(state: GameState): PlayerState[] {
   return state.players.filter((player) => player.status !== "finished");
 }
@@ -255,6 +277,9 @@ export function createGame(options: CreateGameOptions = {}): GameState {
   const playerCount = Math.min(Math.max(options.playerCount ?? 4, rules.minPlayers), rules.maxPlayers);
   const players = createPlayers(playerCount, options.humanName ?? "You", options.botPrefix ?? "Bot");
   dealCards(players);
+  players.forEach((player) => {
+    player.currentRole = "Citizen";
+  });
   const createdAt = now();
   const state: GameState = {
     id: Math.random().toString(36).slice(2, 10),
@@ -315,6 +340,10 @@ export function startNextRoundFromResults(state: GameState): GameState {
   );
 
   state.players.forEach((player) => {
+    player.currentRole = roleForFinishingPosition(
+      player.finishingPosition,
+      playerCount
+    );
     player.hand = [];
     player.status = "active";
     player.finishingPosition = undefined;
@@ -368,6 +397,7 @@ export function getPublicState(state: GameState, viewerPlayerId: string): Public
       handCount: player.hand.length,
       status: player.status,
       finishingPosition: player.finishingPosition,
+      currentRole: player.currentRole,
       isCurrentTurn: state.currentTurnPlayerId === player.id
     })),
     viewerPlayerId: viewer.id,

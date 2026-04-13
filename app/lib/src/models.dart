@@ -102,6 +102,7 @@ class PublicPlayerStateModel {
     required this.handCount,
     required this.status,
     required this.finishingPosition,
+    required this.currentRole,
     required this.isCurrentTurn,
   });
 
@@ -112,6 +113,7 @@ class PublicPlayerStateModel {
   final int handCount;
   final PlayerStatus status;
   final int? finishingPosition;
+  final String? currentRole;
   final bool isCurrentTurn;
 
   factory PublicPlayerStateModel.fromJson(Map<String, dynamic> json) {
@@ -123,6 +125,7 @@ class PublicPlayerStateModel {
       handCount: (json['handCount'] as num).toInt(),
       status: _playerStatusFromString(json['status'] as String),
       finishingPosition: (json['finishingPosition'] as num?)?.toInt(),
+      currentRole: json['currentRole'] as String?,
       isCurrentTurn: json['isCurrentTurn'] as bool,
     );
   }
@@ -270,19 +273,37 @@ String rankLabel(int rank) {
 }
 
 String roleLabel(PublicPlayerStateModel player, int playerCount) {
-  if (player.finishingPosition == 1) {
+  if (player.currentRole != null) {
+    return player.currentRole!;
+  }
+  return roleFromFinishingPosition(player.finishingPosition, playerCount);
+}
+
+String roleFromFinishingPosition(int? finishingPosition, int playerCount) {
+  if (finishingPosition == 1) {
     return 'President';
   }
-  if (player.finishingPosition == 2) {
+  if (finishingPosition == 2) {
     return 'Vice';
   }
-  if (player.finishingPosition == playerCount - 1) {
+  if (finishingPosition == playerCount - 1) {
     return 'Vice Scum';
   }
-  if (player.finishingPosition == playerCount) {
+  if (finishingPosition == playerCount) {
     return 'Scum';
   }
   return 'Citizen';
+}
+
+String awardedRoleLabel(PublicPlayerStateModel player, int playerCount) {
+  if (player.finishingPosition != null) {
+    return roleFromFinishingPosition(player.finishingPosition, playerCount);
+  }
+  return roleLabel(player, playerCount);
+}
+
+String previousRoleLabel(PublicPlayerStateModel player) {
+  return player.currentRole ?? 'Citizen';
 }
 
 int compareCards(CardModel a, CardModel b) {

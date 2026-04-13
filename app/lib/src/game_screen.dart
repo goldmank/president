@@ -38,6 +38,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _showMockExchangeOverlay = false;
   bool _exchangeWaiting = false;
   bool _exchangeReadyToContinue = false;
+  bool _debugNewGamesUseRandomRoles = false;
   List<CardModel> _receivedExchangeCards = <CardModel>[];
   String? _banner;
   Timer? _bannerTimer;
@@ -133,6 +134,57 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _scheduleBotTurnIfNeeded();
     } catch (error, stackTrace) {
       _reportError('load_game', error, stackTrace);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+      });
+      _showBanner(_formatError(error));
+    }
+  }
+
+  Future<void> _startDebugNewGame(int playerCount) async {
+    if (!_debugNewGamesUseRandomRoles) {
+      await _loadGame(playerCount: playerCount);
+      return;
+    }
+
+    _bannerTimer?.cancel();
+    _botTimer?.cancel();
+    setState(() {
+      _loading = true;
+      _busy = false;
+      _banner = null;
+      _showResultsOverlay = false;
+      _showExchangeOverlay = false;
+      _showMockResultsOverlay = false;
+      _showMockExchangeOverlay = false;
+      _exchangeWaiting = false;
+      _exchangeReadyToContinue = false;
+      _receivedExchangeCards = <CardModel>[];
+      _selectedCardIds.clear();
+      _animatingViewerCardIds.clear();
+      _clearFlights();
+    });
+
+    try {
+      await _api.createGame(playerCount: playerCount);
+      await _api.fastForwardGame();
+      final state = await _api.startNextRound();
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _state = state;
+        _loading = false;
+      });
+      if (state.viewerHand.isNotEmpty) {
+        _lastKnownViewerHand = List<CardModel>.from(state.viewerHand);
+      }
+      _scheduleBotTurnIfNeeded();
+    } catch (error, stackTrace) {
+      _reportError('debug_new_game', error, stackTrace);
       if (!mounted) {
         return;
       }
@@ -888,16 +940,20 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           });
           _showBanner(_formatError(error));
         }
+      case _DebugMenuAction.toggleRandomRolesForNewGames:
+        setState(() {
+          _debugNewGamesUseRandomRoles = !_debugNewGamesUseRandomRoles;
+        });
       case _DebugMenuAction.newGame4Players:
-        await _loadGame(playerCount: 4);
+        await _startDebugNewGame(4);
       case _DebugMenuAction.newGame5Players:
-        await _loadGame(playerCount: 5);
+        await _startDebugNewGame(5);
       case _DebugMenuAction.newGame6Players:
-        await _loadGame(playerCount: 6);
+        await _startDebugNewGame(6);
       case _DebugMenuAction.newGame7Players:
-        await _loadGame(playerCount: 7);
+        await _startDebugNewGame(7);
       case _DebugMenuAction.newGame8Players:
-        await _loadGame(playerCount: 8);
+        await _startDebugNewGame(8);
     }
   }
 
@@ -1086,6 +1142,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
               busy: _busy,
               mockResultsVisible: _showMockResultsOverlay,
               mockExchangeVisible: _showMockExchangeOverlay,
+              randomRolesForNewGames: _debugNewGamesUseRandomRoles,
               onSelected: _handleDebugAction,
             ),
           ),
@@ -1573,6 +1630,7 @@ enum _DebugMenuAction {
   toggleMockResults,
   toggleMockExchange,
   fastForwardMatch,
+  toggleRandomRolesForNewGames,
   newGame4Players,
   newGame5Players,
   newGame6Players,
@@ -1585,12 +1643,14 @@ class _DebugMenuButton extends StatelessWidget {
     required this.busy,
     required this.mockResultsVisible,
     required this.mockExchangeVisible,
+    required this.randomRolesForNewGames,
     required this.onSelected,
   });
 
   final bool busy;
   final bool mockResultsVisible;
   final bool mockExchangeVisible;
+  final bool randomRolesForNewGames;
   final ValueChanged<_DebugMenuAction> onSelected;
 
   @override
@@ -1625,6 +1685,12 @@ class _DebugMenuButton extends StatelessWidget {
               value: _DebugMenuAction.fastForwardMatch,
               enabled: !busy,
               child: const Text('Fast-forward Match'),
+            ),
+            const PopupMenuDivider(),
+            CheckedPopupMenuItem<_DebugMenuAction>(
+              value: _DebugMenuAction.toggleRandomRolesForNewGames,
+              checked: randomRolesForNewGames,
+              child: const Text('New Games Use Random Roles'),
             ),
             const PopupMenuDivider(),
             PopupMenuItem<_DebugMenuAction>(
@@ -1709,13 +1775,6 @@ class _SeatRoleBadge extends StatelessWidget {
       'Scum' => presidentDanger,
       _ => presidentMuted,
     };
-    final icon = switch (role) {
-      'President' => Icons.workspace_premium_rounded,
-      'Vice' => Icons.military_tech_rounded,
-      'Vice Scum' => Icons.shield_moon_rounded,
-      'Scum' => Icons.block_rounded,
-      _ => Icons.person_rounded,
-    };
     final size = 24.0 * scale;
 
     return Container(
@@ -1733,9 +1792,26 @@ class _SeatRoleBadge extends StatelessWidget {
           ),
         ],
       ),
-      child: Icon(icon, size: 14 * scale, color: tint),
+      child: Center(
+        child: SvgPicture.asset(
+          _roleBadgeAsset(role),
+          width: 14 * scale,
+          height: 14 * scale,
+          colorFilter: ColorFilter.mode(tint, BlendMode.srcIn),
+        ),
+      ),
     );
   }
+}
+
+String _roleBadgeAsset(String role) {
+  return switch (role) {
+    'President' => 'assets/crown.svg',
+    'Vice' => 'assets/military_tech.svg',
+    'Vice Scum' => 'assets/stat_minus_2.svg',
+    'Scum' => 'assets/skull.svg',
+    _ => 'assets/sentiment_content.svg',
+  };
 }
 
 class _ErrorState extends StatelessWidget {

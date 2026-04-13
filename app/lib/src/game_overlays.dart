@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 import 'card_asset.dart';
 import 'models.dart';
@@ -126,6 +127,7 @@ MatchResultsViewData buildMockMatchResultsViewData(
       handCount: 0,
       status: PlayerStatus.finished,
       finishingPosition: 1,
+      currentRole: 'President',
       isCurrentTurn: false,
     ),
     PublicPlayerStateModel(
@@ -136,6 +138,7 @@ MatchResultsViewData buildMockMatchResultsViewData(
       handCount: 0,
       status: PlayerStatus.finished,
       finishingPosition: 2,
+      currentRole: 'Vice',
       isCurrentTurn: false,
     ),
     PublicPlayerStateModel(
@@ -146,6 +149,7 @@ MatchResultsViewData buildMockMatchResultsViewData(
       handCount: 0,
       status: PlayerStatus.finished,
       finishingPosition: 3,
+      currentRole: 'Citizen',
       isCurrentTurn: false,
     ),
     PublicPlayerStateModel(
@@ -156,6 +160,7 @@ MatchResultsViewData buildMockMatchResultsViewData(
       handCount: 0,
       status: PlayerStatus.finished,
       finishingPosition: 4,
+      currentRole: 'Vice Scum',
       isCurrentTurn: false,
     ),
     PublicPlayerStateModel(
@@ -166,6 +171,7 @@ MatchResultsViewData buildMockMatchResultsViewData(
       handCount: 0,
       status: PlayerStatus.finished,
       finishingPosition: 5,
+      currentRole: 'Scum',
       isCurrentTurn: false,
     ),
   ];
@@ -181,6 +187,7 @@ MatchResultsViewData buildMockMatchResultsViewData(
                 handCount: 0,
                 status: PlayerStatus.finished,
                 finishingPosition: null,
+                currentRole: player.currentRole,
                 isCurrentTurn: false,
               ),
             )
@@ -212,6 +219,13 @@ MatchResultsViewData buildMockMatchResultsViewData(
           handCount: entry.value.handCount,
           status: PlayerStatus.finished,
           finishingPosition: entry.key + 1,
+          currentRole: switch (entry.key + 1) {
+            1 => 'President',
+            2 => 'Vice',
+            _ when entry.key + 1 == orderedPlayers.length - 1 => 'Vice Scum',
+            _ when entry.key + 1 == orderedPlayers.length => 'Scum',
+            _ => 'Citizen',
+          },
           isCurrentTurn: false,
         ),
       )
@@ -235,7 +249,7 @@ MatchResultsViewData buildMockMatchResultsViewData(
 
 ExchangeViewData? buildExchangeViewData(PublicGameStateModel state) {
   final viewer = state.viewer;
-  final role = roleLabel(viewer, state.players.length);
+  final role = awardedRoleLabel(viewer, state.players.length);
   final president = _firstWhereOrNull(
     state.players,
     (entry) => entry.finishingPosition == 1,
@@ -258,7 +272,7 @@ ExchangeViewData? buildExchangeViewData(PublicGameStateModel state) {
       viewer: viewer,
       counterpart: scum,
       role: role,
-      counterpartRole: roleLabel(scum, state.players.length),
+      counterpartRole: awardedRoleLabel(scum, state.players.length),
       requiredCount: 2,
       direction: ExchangeDirection.sendWorst,
     ),
@@ -267,7 +281,7 @@ ExchangeViewData? buildExchangeViewData(PublicGameStateModel state) {
         viewer: viewer,
         counterpart: viceScum,
         role: role,
-        counterpartRole: roleLabel(viceScum, state.players.length),
+        counterpartRole: awardedRoleLabel(viceScum, state.players.length),
         requiredCount: 1,
         direction: ExchangeDirection.sendWorst,
       ),
@@ -275,7 +289,7 @@ ExchangeViewData? buildExchangeViewData(PublicGameStateModel state) {
       viewer: viewer,
       counterpart: president,
       role: role,
-      counterpartRole: roleLabel(president, state.players.length),
+      counterpartRole: awardedRoleLabel(president, state.players.length),
       requiredCount: 2,
       direction: ExchangeDirection.sendBest,
     ),
@@ -283,7 +297,7 @@ ExchangeViewData? buildExchangeViewData(PublicGameStateModel state) {
       viewer: viewer,
       counterpart: vice,
       role: role,
-      counterpartRole: roleLabel(vice, state.players.length),
+      counterpartRole: awardedRoleLabel(vice, state.players.length),
       requiredCount: 1,
       direction: ExchangeDirection.sendBest,
     ),
@@ -301,6 +315,7 @@ ExchangeViewData buildMockExchangeViewData(PublicGameStateModel? baseState) {
       handCount: 0,
       status: PlayerStatus.finished,
       finishingPosition: 5,
+      currentRole: 'Scum',
       isCurrentTurn: false,
     ),
     PublicPlayerStateModel(
@@ -311,6 +326,7 @@ ExchangeViewData buildMockExchangeViewData(PublicGameStateModel? baseState) {
       handCount: 0,
       status: PlayerStatus.finished,
       finishingPosition: 2,
+      currentRole: 'Vice',
       isCurrentTurn: false,
     ),
     PublicPlayerStateModel(
@@ -321,6 +337,7 @@ ExchangeViewData buildMockExchangeViewData(PublicGameStateModel? baseState) {
       handCount: 13,
       status: PlayerStatus.finished,
       finishingPosition: 1,
+      currentRole: 'President',
       isCurrentTurn: false,
     ),
     PublicPlayerStateModel(
@@ -331,6 +348,7 @@ ExchangeViewData buildMockExchangeViewData(PublicGameStateModel? baseState) {
       handCount: 0,
       status: PlayerStatus.finished,
       finishingPosition: 4,
+      currentRole: 'Vice Scum',
       isCurrentTurn: false,
     ),
     PublicPlayerStateModel(
@@ -341,6 +359,7 @@ ExchangeViewData buildMockExchangeViewData(PublicGameStateModel? baseState) {
       handCount: 0,
       status: PlayerStatus.finished,
       finishingPosition: 5,
+      currentRole: 'Scum',
       isCurrentTurn: false,
     ),
   ];
@@ -367,6 +386,7 @@ ExchangeViewData buildMockExchangeViewData(PublicGameStateModel? baseState) {
                     : entry.key == 1
                     ? 2
                     : entry.key + 1,
+                currentRole: entry.value.id == viewerId ? 'President' : null,
                 isCurrentTurn: false,
               ),
             )
@@ -401,6 +421,13 @@ class ResultsOverlay extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rankedEntries = [...data.entries]
+      ..sort((left, right) {
+        final leftRank = left.finishingPosition ?? 999;
+        final rightRank = right.finishingPosition ?? 999;
+        return leftRank.compareTo(rightRank);
+      });
+
     return _OverlayShell(
       child: Column(
         children: [
@@ -410,15 +437,17 @@ class ResultsOverlay extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           SizedBox(
-            height: data.entries.length > 4 ? 392 : (data.entries.length * 90),
+            height: rankedEntries.length > 4
+                ? 392
+                : (rankedEntries.length * 90),
             child: ListView.builder(
               padding: EdgeInsets.zero,
-              itemCount: data.entries.length,
+              itemCount: rankedEntries.length,
               itemBuilder: (context, index) {
-                final player = data.entries[index];
+                final player = rankedEntries[index];
                 return _ResultRow(
                   player: player,
-                  totalPlayers: data.entries.length,
+                  totalPlayers: rankedEntries.length,
                   isViewer: player.id == data.viewer.id,
                 );
               },
@@ -767,9 +796,10 @@ class _ResultRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final role = roleLabel(player, totalPlayers);
+    final previousRole = previousRoleLabel(player);
+    final newRole = awardedRoleLabel(player, totalPlayers);
     final rank = player.finishingPosition ?? totalPlayers;
-    final accent = switch (role) {
+    final accent = switch (newRole) {
       'President' => presidentPrimary,
       'Vice' => presidentSecondary,
       'Vice Scum' => presidentTertiary,
@@ -778,7 +808,7 @@ class _ResultRow extends StatelessWidget {
     };
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: isViewer ? presidentSurfaceHigh : presidentSurfaceLow,
@@ -802,27 +832,45 @@ class _ResultRow extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          Container(
-            width: 50,
-            height: 50,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: Color(
-                int.parse(
-                  'FF${player.avatarColor.replaceFirst('#', '')}',
-                  radix: 16,
+          SizedBox(
+            width: 58,
+            height: 58,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Positioned(
+                  left: 0,
+                  top: 0,
+                  child: Container(
+                    width: 50,
+                    height: 50,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: Color(
+                        int.parse(
+                          'FF${player.avatarColor.replaceFirst('#', '')}',
+                          radix: 16,
+                        ),
+                      ),
+                      border: Border.all(color: accent, width: 1.5),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      player.name.characters.first.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.w900,
+                        fontSize: 20,
+                      ),
+                    ),
+                  ),
                 ),
-              ),
-              border: Border.all(color: accent, width: 1.5),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              player.name.characters.first.toUpperCase(),
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.w900,
-                fontSize: 20,
-              ),
+                Positioned(
+                  top: 0,
+                  right: 0,
+                  child: _ResultRoleBadge(role: newRole),
+                ),
+              ],
             ),
           ),
           const SizedBox(width: 12),
@@ -856,7 +904,7 @@ class _ResultRow extends StatelessWidget {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
-                    role.toUpperCase(),
+                    '${previousRole.toUpperCase()} -> ${newRole.toUpperCase()}',
                     style: TextStyle(
                       color: accent,
                       fontSize: 9,
@@ -872,6 +920,51 @@ class _ResultRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _ResultRoleBadge extends StatelessWidget {
+  const _ResultRoleBadge({required this.role});
+
+  final String role;
+
+  @override
+  Widget build(BuildContext context) {
+    final tint = switch (role) {
+      'President' => presidentPrimary,
+      'Vice' => presidentSecondary,
+      'Vice Scum' => presidentTertiary,
+      'Scum' => presidentDanger,
+      _ => presidentMuted,
+    };
+
+    return Container(
+      width: 22,
+      height: 22,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: presidentSurfaceLowest.withValues(alpha: 0.96),
+        border: Border.all(color: tint.withValues(alpha: 0.88), width: 1.4),
+      ),
+      child: Center(
+        child: SvgPicture.asset(
+          _roleBadgeAsset(role),
+          width: 13,
+          height: 13,
+          colorFilter: ColorFilter.mode(tint, BlendMode.srcIn),
+        ),
+      ),
+    );
+  }
+}
+
+String _roleBadgeAsset(String role) {
+  return switch (role) {
+    'President' => 'assets/crown.svg',
+    'Vice' => 'assets/military_tech.svg',
+    'Vice Scum' => 'assets/stat_minus_2.svg',
+    'Scum' => 'assets/skull.svg',
+    _ => 'assets/sentiment_content.svg',
+  };
 }
 
 class _PowerShiftSection extends StatelessWidget {
@@ -1009,30 +1102,44 @@ class _ExchangePlayerChip extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 6),
-        Container(
-          width: 62,
-          height: 62,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Color(
-              int.parse(
-                'FF${player.avatarColor.replaceFirst('#', '')}',
-                radix: 16,
+        SizedBox(
+          width: 72,
+          height: 68,
+          child: Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Positioned(
+                left: 5,
+                top: 3,
+                child: Container(
+                  width: 62,
+                  height: 62,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: Color(
+                      int.parse(
+                        'FF${player.avatarColor.replaceFirst('#', '')}',
+                        radix: 16,
+                      ),
+                    ),
+                    border: Border.all(color: presidentOutlineVariant),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    player.name.characters.first.toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 20,
+                    ),
+                  ),
+                ),
               ),
-            ),
-            border: Border.all(color: presidentOutlineVariant),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            player.name.characters.first.toUpperCase(),
-            style: const TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.w800,
-              fontSize: 20,
-            ),
+              Positioned(top: 0, right: 0, child: _ResultRoleBadge(role: role)),
+            ],
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 2),
         SizedBox(
           width: 84,
           child: Text(

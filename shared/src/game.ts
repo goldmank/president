@@ -17,6 +17,7 @@ export interface PlayerState extends PlayerSummary {
   hand: Card[];
   status: PlayerStatus;
   finishingPosition?: number;
+  currentRole?: string;
 }
 
 export interface PlayedSet {
@@ -58,6 +59,7 @@ export interface PublicPlayerState extends PlayerSummary {
   handCount: number;
   status: PlayerStatus;
   finishingPosition?: number;
+  currentRole?: string;
   isCurrentTurn: boolean;
 }
 
