@@ -13,6 +13,11 @@ class AppConfig {
 
   bool get isDev => buildMode.toLowerCase() == 'dev';
   bool get isProd => buildMode.toLowerCase() == 'prod';
+  String get webSocketEndpoint {
+    final uri = Uri.parse(serverEndpoint);
+    final scheme = uri.scheme == 'https' ? 'wss' : 'ws';
+    return uri.replace(scheme: scheme).toString();
+  }
 
   static Future<void> load() async {
     final raw = await rootBundle.loadString('.env');

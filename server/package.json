@@ -10,11 +10,14 @@
   "dependencies": {
     "@president/shared": "*",
     "cors": "^2.8.5",
-    "express": "^5.1.0"
+    "express": "^5.1.0",
+    "firebase-admin": "^13.5.0",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.1",
+    "@types/ws": "^8.5.13",
     "tsx": "^4.19.3"
   }
 }

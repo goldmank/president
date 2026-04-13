@@ -1,1 +1,44 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"president-bc5e7","appId":"1:753507618735:android:6a237e128c474e3977695a","fileOutput":"android/app/google-services.json"}},"ios":{"default":{"projectId":"president-bc5e7","appId":"1:753507618735:ios:49f2194ab906242277695a","uploadDebugSymbols":false,"fileOutput":"ios/Runner/GoogleService-Info.plist"}},"macos":{"default":{"projectId":"president-bc5e7","appId":"1:753507618735:ios:49f2194ab906242277695a","uploadDebugSymbols":false,"fileOutput":"macos/Runner/GoogleService-Info.plist"}},"dart":{"lib/firebase_options.dart":{"projectId":"president-bc5e7","configurations":{"android":"1:753507618735:android:6a237e128c474e3977695a","ios":"1:753507618735:ios:49f2194ab906242277695a","macos":"1:753507618735:ios:49f2194ab906242277695a","web":"1:753507618735:web:f8f62ab571eb225077695a","windows":"1:753507618735:web:83253c1b604f112877695a"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "president-bc5e7",
+          "appId": "1:753507618735:android:6a237e128c474e3977695a",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "ios": {
+        "default": {
+          "projectId": "president-bc5e7",
+          "appId": "1:753507618735:ios:49f2194ab906242277695a",
+          "uploadDebugSymbols": false,
+          "fileOutput": "ios/Runner/GoogleService-Info.plist"
+        }
+      },
+      "macos": {
+        "default": {
+          "projectId": "president-bc5e7",
+          "appId": "1:753507618735:ios:49f2194ab906242277695a",
+          "uploadDebugSymbols": false,
+          "fileOutput": "macos/Runner/GoogleService-Info.plist"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "president-bc5e7",
+          "configurations": {
+            "android": "1:753507618735:android:6a237e128c474e3977695a",
+            "ios": "1:753507618735:ios:49f2194ab906242277695a",
+            "macos": "1:753507618735:ios:49f2194ab906242277695a",
+            "web": "1:753507618735:web:f8f62ab571eb225077695a",
+            "windows": "1:753507618735:web:83253c1b604f112877695a"
+          }
+        }
+      }
+    }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  }
+}

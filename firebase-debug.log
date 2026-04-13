@@ -1,0 +1,13 @@
+[debug] [2026-04-13T12:23:05.460Z] ----------------------------------------------------------------------
+[debug] [2026-04-13T12:23:05.461Z] Command:       /Users/kfirgoldman/.nvm/versions/node/v20.17.0/bin/node /Users/kfirgoldman/.nvm/versions/node/v20.17.0/bin/firebase deploy --only firestore:rules --project president-bc5e7
+[debug] [2026-04-13T12:23:05.462Z] CLI Version:   15.5.1
+[debug] [2026-04-13T12:23:05.462Z] Platform:      darwin
+[debug] [2026-04-13T12:23:05.462Z] Node Version:  v20.17.0
+[debug] [2026-04-13T12:23:05.462Z] Time:          Mon Apr 13 2026 15:23:05 GMT+0300 (Israel Daylight Time)
+[debug] [2026-04-13T12:23:05.462Z] ----------------------------------------------------------------------
+[debug] 
+[debug] [2026-04-13T12:23:05.463Z] >>> [apiv2][query] GET https://firebase-public.firebaseio.com/cli.json [none]
+[error] 
+[error] Error: Not in a Firebase app directory (could not locate firebase.json)
+[debug] [2026-04-13T12:23:06.779Z] <<< [apiv2][status] GET https://firebase-public.firebaseio.com/cli.json 200
+[debug] [2026-04-13T12:23:06.779Z] <<< [apiv2][body] GET https://firebase-public.firebaseio.com/cli.json {"cloudBuildErrorAfter":1594252800000,"cloudBuildWarnAfter":1590019200000,"defaultNode10After":1594252800000,"minVersion":"3.0.5","node8DeploysDisabledAfter":1613390400000,"node8RuntimeDisabledAfter":1615809600000,"node8WarnAfter":1600128000000}

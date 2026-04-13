@@ -15,7 +15,9 @@ import 'president_theme.dart';
 import 'user_progress_service.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key});
+  const GameScreen({super.key, this.initialPlayerCount});
+
+  final int? initialPlayerCount;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -53,7 +55,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
-    _loadGame();
+    _loadGame(playerCount: widget.initialPlayerCount);
   }
 
   @override

@@ -8,7 +8,10 @@ import 'app_config.dart';
 import 'auth_screen.dart';
 import 'auth_service.dart';
 import 'game_screen.dart';
+import 'private_room_screen.dart';
 import 'president_theme.dart';
+import 'ranked_search_screen.dart';
+import 'ranked_api.dart';
 import 'settings_screen.dart';
 import 'tutorial_screen.dart';
 import 'user_progress.dart';
@@ -25,6 +28,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _scrollController = ScrollController();
   final TextEditingController _roomCodeController = TextEditingController();
+  final RankedApi _rankedApi = RankedApi();
   int _selectedTab = 0;
   User? _user;
   StreamSubscription<User?>? _authSubscription;
@@ -135,6 +139,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
                                   onStartPractice: _openBotGame,
                                   onSignUp: _openAuthFlow,
                                   onJoinRoom: _handleJoinRoom,
+                                  onFindMatch: _openRankedMatchmaking,
+                                  onCreateMatch: _createPrivateMatch,
                                 ),
                                 1 => _RankingTab(
                                   key: const ValueKey<String>('ranking'),
@@ -175,6 +181,11 @@ class _LobbyScreenState extends State<LobbyScreen> {
         builder: (BuildContext context) => const GameScreen(),
       ),
     );
+  }
+
+  String _formatError(Object error) {
+    final text = error.toString();
+    return text.startsWith('Exception: ') ? text.substring(11) : text;
   }
 
   Future<void> _openAuthFlow() async {
@@ -252,9 +263,108 @@ class _LobbyScreenState extends State<LobbyScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Joining room $roomCode is not wired yet.')),
+    final displayName = (_user!.displayName?.trim().isNotEmpty ?? false)
+        ? _user!.displayName!.trim()
+        : 'Player';
+    final rankScore = UserProgressService.instance.currentProgress.score;
+    _log('privateRoom.join.request code=$roomCode userId=${_user!.uid} rankScore=$rankScore');
+
+    unawaited(() async {
+      try {
+        final room = await _rankedApi.joinPrivateRoom(
+          code: roomCode,
+          userId: _user!.uid,
+          displayName: displayName,
+          rankScore: rankScore,
+        );
+        _log('privateRoom.join.success code=${room.code} seats=${room.seats.length} status=${room.status}');
+        if (!mounted) {
+          return;
+        }
+        await Navigator.of(context).push(
+          MaterialPageRoute<void>(
+            builder: (BuildContext context) => PrivateRoomScreen(
+              initialRoom: room,
+              isHost: room.hostUserId == _user!.uid,
+            ),
+          ),
+        );
+      } catch (error) {
+        _log('privateRoom.join.error code=$roomCode error=$error');
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(_formatError(error))));
+      }
+    }());
+  }
+
+  Future<void> _openRankedMatchmaking() async {
+    if (_user == null) {
+      await _openAuthFlow();
+      return;
+    }
+
+    final displayName = (_user!.displayName?.trim().isNotEmpty ?? false)
+        ? _user!.displayName!.trim()
+        : 'Player';
+    final rankScore = UserProgressService.instance.currentProgress.score;
+    _log('ranked.findMatch.open userId=${_user!.uid} rankScore=$rankScore');
+
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => RankedSearchScreen(
+          userId: _user!.uid,
+          displayName: displayName,
+          rankScore: rankScore,
+        ),
+      ),
     );
+  }
+
+  Future<void> _createPrivateMatch() async {
+    if (_user == null) {
+      await _openAuthFlow();
+      return;
+    }
+
+    final displayName = (_user!.displayName?.trim().isNotEmpty ?? false)
+        ? _user!.displayName!.trim()
+        : 'Player';
+    final rankScore = UserProgressService.instance.currentProgress.score;
+    _log('privateRoom.create.request userId=${_user!.uid} rankScore=$rankScore');
+
+    try {
+      final room = await _rankedApi.createPrivateRoom(
+        userId: _user!.uid,
+        displayName: displayName,
+        rankScore: rankScore,
+      );
+      _log('privateRoom.create.success code=${room.code} seats=${room.seats.length} status=${room.status}');
+      if (!mounted) {
+        return;
+      }
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) =>
+              PrivateRoomScreen(initialRoom: room, isHost: true),
+        ),
+      );
+    } catch (error) {
+      _log('privateRoom.create.error error=$error');
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(_formatError(error))));
+    }
+  }
+
+  void _log(String message) {
+    debugPrint('[lobby] $message');
   }
 }
 
@@ -583,6 +693,8 @@ class _LobbyTab extends StatelessWidget {
     required this.onStartPractice,
     required this.onSignUp,
     required this.onJoinRoom,
+    required this.onFindMatch,
+    required this.onCreateMatch,
   });
 
   final bool isSignedIn;
@@ -590,6 +702,8 @@ class _LobbyTab extends StatelessWidget {
   final VoidCallback onStartPractice;
   final VoidCallback onSignUp;
   final VoidCallback onJoinRoom;
+  final VoidCallback onFindMatch;
+  final VoidCallback onCreateMatch;
 
   @override
   Widget build(BuildContext context) {
@@ -700,18 +814,24 @@ class _LobbyTab extends StatelessWidget {
         const SizedBox(height: 18),
         _HeroCard(
           title: 'Ranked Lobbies',
-          body:
-              'Requires an account. Track rating, play real opponents, and carry your profile across devices.',
-          buttonLabel: 'SIGN UP TO UNLOCK',
+          body: isSignedIn
+              ? 'Search for real opponents, prioritize similar rank, and let the server fill empty seats with bots if the queue runs long.'
+              : 'Requires an account. Track rating, play real opponents, and carry your profile across devices.',
+          buttonLabel: isSignedIn ? 'FIND MATCH' : 'SIGN UP TO UNLOCK',
+          secondaryButtonLabel: isSignedIn ? 'CREATE MATCH' : null,
           icon: Icons.groups_rounded,
-          buttonIcon: Icons.lock_open_rounded,
+          buttonIcon: isSignedIn
+              ? Icons.radar_rounded
+              : Icons.lock_open_rounded,
+          secondaryButtonIcon: Icons.add_rounded,
           accent: presidentPrimary,
           background: const LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
             colors: <Color>[Color(0xFF342C07), Color(0xFF1D1A10)],
           ),
-          onPressed: onSignUp,
+          onPressed: isSignedIn ? onFindMatch : onSignUp,
+          onSecondaryPressed: isSignedIn ? onCreateMatch : null,
         ),
       ],
     );
@@ -964,23 +1084,29 @@ class _HeroCard extends StatelessWidget {
     required this.title,
     required this.body,
     required this.buttonLabel,
+    this.secondaryButtonLabel,
     this.icon,
     this.iconAsset,
     required this.buttonIcon,
+    this.secondaryButtonIcon,
     required this.accent,
     required this.background,
     required this.onPressed,
+    this.onSecondaryPressed,
   }) : assert(icon != null || iconAsset != null);
 
   final String title;
   final String body;
   final String buttonLabel;
+  final String? secondaryButtonLabel;
   final IconData? icon;
   final String? iconAsset;
   final IconData buttonIcon;
+  final IconData? secondaryButtonIcon;
   final Color accent;
   final Gradient background;
   final VoidCallback? onPressed;
+  final VoidCallback? onSecondaryPressed;
 
   @override
   Widget build(BuildContext context) {
@@ -1040,39 +1166,119 @@ class _HeroCard extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              FilledButton(
-                onPressed: onPressed,
-                style: FilledButton.styleFrom(
-                  backgroundColor: enabled ? accent : presidentSurfaceHighest,
-                  foregroundColor: enabled ? Colors.black : presidentMuted,
-                  minimumSize: const Size(140, 0),
-                  padding: EdgeInsets.symmetric(
-                    horizontal: compact ? 12 : 18,
-                    vertical: compact ? 14 : 16,
+              if (secondaryButtonLabel == null)
+                FilledButton(
+                  onPressed: onPressed,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: enabled ? accent : presidentSurfaceHighest,
+                    foregroundColor: enabled ? Colors.black : presidentMuted,
+                    minimumSize: const Size(140, 0),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: compact ? 12 : 18,
+                      vertical: compact ? 14 : 16,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(999),
+                    ),
                   ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(999),
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Icon(buttonIcon, size: compact ? 16 : 18),
+                        const SizedBox(width: 6),
+                        Text(
+                          buttonLabel,
+                          style: TextStyle(
+                            fontSize: compact ? 10 : 11,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: compact ? 1.0 : 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: <Widget>[
-                      Icon(buttonIcon, size: compact ? 16 : 18),
-                      const SizedBox(width: 6),
-                      Text(
-                        buttonLabel,
-                        style: TextStyle(
-                          fontSize: compact ? 10 : 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: compact ? 1.0 : 1.4,
+                )
+              else
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: onPressed,
+                        style: FilledButton.styleFrom(
+                          backgroundColor:
+                              enabled ? accent : presidentSurfaceHighest,
+                          foregroundColor:
+                              enabled ? Colors.black : presidentMuted,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: compact ? 10 : 14,
+                            vertical: compact ? 14 : 16,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Icon(buttonIcon, size: compact ? 16 : 18),
+                              const SizedBox(width: 6),
+                              Text(
+                                buttonLabel,
+                                style: TextStyle(
+                                  fontSize: compact ? 10 : 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: compact ? 1.0 : 1.2,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: FilledButton(
+                        onPressed: onSecondaryPressed,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: presidentSurfaceHighest,
+                          foregroundColor: presidentText,
+                          padding: EdgeInsets.symmetric(
+                            horizontal: compact ? 10 : 14,
+                            vertical: compact ? 14 : 16,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(999),
+                          ),
+                        ),
+                        child: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              Icon(
+                                secondaryButtonIcon ?? Icons.add_rounded,
+                                size: compact ? 16 : 18,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                secondaryButtonLabel!,
+                                style: TextStyle(
+                                  fontSize: compact ? 10 : 11,
+                                  fontWeight: FontWeight.w900,
+                                  letterSpacing: compact ? 1.0 : 1.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
             ],
           ),
         );
