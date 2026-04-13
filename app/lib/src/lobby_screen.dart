@@ -24,6 +24,7 @@ class LobbyScreen extends StatefulWidget {
 class _LobbyScreenState extends State<LobbyScreen> {
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   final ScrollController _scrollController = ScrollController();
+  final TextEditingController _roomCodeController = TextEditingController();
   int _selectedTab = 0;
   User? _user;
   StreamSubscription<User?>? _authSubscription;
@@ -58,6 +59,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
     if (_progressListener != null) {
       UserProgressService.instance.removeListener(_progressListener!);
     }
+    _roomCodeController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
@@ -128,8 +130,11 @@ class _LobbyScreenState extends State<LobbyScreen> {
                               child: switch (_selectedTab) {
                                 0 => _LobbyTab(
                                   key: const ValueKey<String>('lobby'),
+                                  isSignedIn: _user != null,
+                                  roomCodeController: _roomCodeController,
                                   onStartPractice: _openBotGame,
                                   onSignUp: _openAuthFlow,
+                                  onJoinRoom: _handleJoinRoom,
                                 ),
                                 1 => _RankingTab(
                                   key: const ValueKey<String>('ranking'),
@@ -231,6 +236,25 @@ class _LobbyScreenState extends State<LobbyScreen> {
         curve: Curves.easeOutCubic,
       );
     }
+  }
+
+  void _handleJoinRoom() {
+    if (_user == null) {
+      _openAuthFlow();
+      return;
+    }
+
+    final roomCode = _roomCodeController.text.trim().toUpperCase();
+    if (roomCode.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter a room code first.')),
+      );
+      return;
+    }
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Joining room $roomCode is not wired yet.')),
+    );
   }
 }
 
@@ -554,12 +578,18 @@ class _ProfilePanel extends StatelessWidget {
 class _LobbyTab extends StatelessWidget {
   const _LobbyTab({
     super.key,
+    required this.isSignedIn,
+    required this.roomCodeController,
     required this.onStartPractice,
     required this.onSignUp,
+    required this.onJoinRoom,
   });
 
+  final bool isSignedIn;
+  final TextEditingController roomCodeController;
   final VoidCallback onStartPractice;
   final VoidCallback onSignUp;
+  final VoidCallback onJoinRoom;
 
   @override
   Widget build(BuildContext context) {
@@ -607,31 +637,31 @@ class _LobbyTab extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Expanded(
-                    child: GestureDetector(
-                      onTap: onSignUp,
-                      child: AbsorbPointer(
-                        child: TextField(
-                          decoration: InputDecoration(
-                            hintText: 'Enter room code',
-                            hintStyle: const TextStyle(color: presidentOutline),
-                            filled: true,
-                            fillColor: presidentSurfaceHighest,
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(16),
-                              borderSide: BorderSide.none,
-                            ),
-                            contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 16,
-                            ),
-                          ),
+                    child: TextField(
+                      controller: roomCodeController,
+                      readOnly: !isSignedIn,
+                      textCapitalization: TextCapitalization.characters,
+                      onTap: isSignedIn ? null : onSignUp,
+                      onSubmitted: isSignedIn ? (_) => onJoinRoom() : null,
+                      decoration: InputDecoration(
+                        hintText: 'Enter room code',
+                        hintStyle: const TextStyle(color: presidentOutline),
+                        filled: true,
+                        fillColor: presidentSurfaceHighest,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 16,
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   FilledButton(
-                    onPressed: onSignUp,
+                    onPressed: isSignedIn ? onJoinRoom : onSignUp,
                     style: FilledButton.styleFrom(
                       backgroundColor: presidentSurfaceHighest,
                       foregroundColor: presidentText,
@@ -654,9 +684,11 @@ class _LobbyTab extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 10),
-              const Text(
-                'Room codes and multiplayer become available after sign up.',
-                style: TextStyle(
+              Text(
+                isSignedIn
+                    ? 'Enter a room code to join a multiplayer table.'
+                    : 'Room codes and multiplayer become available after sign up.',
+                style: const TextStyle(
                   color: presidentMuted,
                   fontSize: 12,
                   fontWeight: FontWeight.w600,

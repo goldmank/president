@@ -31,6 +31,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   final List<_CardFlight> _cardFlights = <_CardFlight>[];
   List<CardModel> _lastKnownViewerHand = <CardModel>[];
   String? _recordedFinishedGameId;
+  ExchangePreviewModel? _exchangePreview;
 
   PublicGameStateModel? _state;
   bool _loading = true;
@@ -41,6 +42,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   bool _showMockExchangeOverlay = false;
   bool _exchangeWaiting = false;
   bool _exchangeReadyToContinue = false;
+  bool _exchangePreviewLoading = false;
   bool _debugNewGamesUseRandomRoles = false;
   List<CardModel> _receivedExchangeCards = <CardModel>[];
   String? _banner;
@@ -115,6 +117,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _showMockExchangeOverlay = false;
       _exchangeWaiting = false;
       _exchangeReadyToContinue = false;
+      _exchangePreviewLoading = false;
+      _exchangePreview = null;
       _receivedExchangeCards = <CardModel>[];
       _recordedFinishedGameId = null;
       _selectedCardIds.clear();
@@ -170,6 +174,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _showMockExchangeOverlay = false;
       _exchangeWaiting = false;
       _exchangeReadyToContinue = false;
+      _exchangePreviewLoading = false;
+      _exchangePreview = null;
       _receivedExchangeCards = <CardModel>[];
       _recordedFinishedGameId = null;
       _selectedCardIds.clear();
@@ -264,6 +270,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _showMockExchangeOverlay = false;
         _exchangeWaiting = false;
         _exchangeReadyToContinue = false;
+        _exchangePreviewLoading = false;
+        _exchangePreview = null;
         _receivedExchangeCards = <CardModel>[];
       } else {
         _showResultsOverlay = false;
@@ -272,6 +280,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _showMockExchangeOverlay = false;
         _exchangeWaiting = false;
         _exchangeReadyToContinue = false;
+        _exchangePreviewLoading = false;
+        _exchangePreview = null;
         _receivedExchangeCards = <CardModel>[];
       }
     });
@@ -740,12 +750,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _showExchangeOverlay = exchange != null;
       _exchangeWaiting = false;
       _exchangeReadyToContinue = false;
+      _exchangePreviewLoading = exchange != null;
+      _exchangePreview = null;
       _receivedExchangeCards = <CardModel>[];
     });
 
     if (exchange == null) {
       _loadGame();
+      return;
     }
+
+    unawaited(_loadExchangePreview());
   }
 
   void _closeExchangeAndRestart() {
@@ -754,6 +769,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _showMockExchangeOverlay = false;
       _exchangeWaiting = false;
       _exchangeReadyToContinue = false;
+      _exchangePreviewLoading = false;
+      _exchangePreview = null;
       _receivedExchangeCards = <CardModel>[];
     });
     _loadGame();
@@ -764,8 +781,36 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _showMockExchangeOverlay = false;
       _exchangeWaiting = false;
       _exchangeReadyToContinue = false;
+      _exchangePreviewLoading = false;
+      _exchangePreview = null;
       _receivedExchangeCards = <CardModel>[];
     });
+  }
+
+  Future<void> _loadExchangePreview() async {
+    try {
+      final preview = await _api.getExchangePreview();
+      debugPrint(
+        '[exchange_preview] send=${preview == null ? "-" : preview.sendCards.map((card) => rankLabel(card.rank)).join(",")} '
+        'receive=${preview == null ? "-" : preview.receiveCards.map((card) => rankLabel(card.rank)).join(",")}',
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _exchangePreview = preview;
+        _exchangePreviewLoading = false;
+      });
+    } catch (error, stackTrace) {
+      _reportError('exchange_preview', error, stackTrace);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _exchangePreviewLoading = false;
+      });
+      _showBanner(_formatError(error));
+    }
   }
 
   Future<void> _confirmExchangeAndContinue() async {
@@ -832,7 +877,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     setState(() {
       _exchangeWaiting = false;
       _exchangeReadyToContinue = true;
-      _receivedExchangeCards = _simulatedReceivedExchangeCards(exchangeData);
+      _receivedExchangeCards =
+          _exchangePreview?.receiveCards ??
+          _simulatedReceivedExchangeCards(exchangeData);
     });
   }
 
@@ -865,13 +912,6 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     if (shouldExit == true && mounted) {
       Navigator.of(context).maybePop();
     }
-  }
-
-  List<CardModel> _exchangeHandForState(PublicGameStateModel state) {
-    if (state.viewerHand.isNotEmpty) {
-      return state.viewerHand;
-    }
-    return _lastKnownViewerHand;
   }
 
   List<CardModel> _autoExchangeCards(
@@ -1088,11 +1128,11 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final exchangeOverlayData = _showMockExchangeOverlay
         ? buildMockExchangeViewData(state)
         : buildExchangeViewData(state);
-    final exchangeHand = _exchangeHandForState(state);
-    final autoExchangeCards = _autoExchangeCards(
-      exchangeHand,
-      exchangeOverlayData,
-    );
+    final autoExchangeCards = _showMockExchangeOverlay
+        ? _autoExchangeCards(_lastKnownViewerHand, exchangeOverlayData)
+        : (_exchangePreviewLoading
+              ? const <CardModel>[]
+              : (_exchangePreview?.sendCards ?? const <CardModel>[]));
     final buttonEnabled = _selectedCardIds.isEmpty
         ? _isViewerTurn
         : _isSelectedPlayValid(state);

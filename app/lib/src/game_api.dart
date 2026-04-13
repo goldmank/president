@@ -70,11 +70,34 @@ class GameApi {
     return _decodeState(response);
   }
 
+  Future<ExchangePreviewModel?> getExchangePreview() async {
+    final response = await _client.get(
+      _uri('/game/exchange-preview'),
+      headers: _headers,
+    );
+    final payload = _decodePayload(response);
+    if (payload == null) {
+      return null;
+    }
+    return ExchangePreviewModel.fromJson(payload);
+  }
+
   static const Map<String, String> _headers = <String, String>{
     'Content-Type': 'application/json',
   };
 
   PublicGameStateModel _decodeState(http.Response response) {
+    final payload = _decodePayload(response);
+    if (payload == null) {
+      throw Exception(
+        'Invalid server response (${response.statusCode}): '
+        '${_compactBody(response.body)}',
+      );
+    }
+    return PublicGameStateModel.fromJson(payload);
+  }
+
+  Map<String, dynamic>? _decodePayload(http.Response response) {
     final payload = _tryDecodeJson(response.body);
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final message = payload is Map<String, dynamic>
@@ -82,13 +105,7 @@ class GameApi {
           : _fallbackErrorMessage(response);
       throw Exception(message ?? _fallbackErrorMessage(response));
     }
-    if (payload is! Map<String, dynamic>) {
-      throw Exception(
-        'Invalid server response (${response.statusCode}): '
-        '${_compactBody(response.body)}',
-      );
-    }
-    return PublicGameStateModel.fromJson(payload);
+    return payload is Map<String, dynamic> ? payload : null;
   }
 
   Object? _tryDecodeJson(String body) {
@@ -115,6 +132,11 @@ class GameApi {
 
   String _fallbackErrorMessage(http.Response response) {
     final body = _compactBody(response.body);
+    final normalized = body.toLowerCase();
+    if (normalized.contains('ngrok gateway error') ||
+        normalized.contains('err_ngrok_3004')) {
+      return 'Server unavailable. Check your dev server endpoint.';
+    }
     if (body.isNotEmpty) {
       return 'Request failed with ${response.statusCode}: $body';
     }

@@ -4,6 +4,7 @@ import {
   createGame,
   executeBotTurn,
   fastForwardToEnd,
+  getExchangePreview,
   getPublicState,
   startNextRoundFromResults,
   submitAction,
@@ -62,6 +63,14 @@ export class GameManager {
     startNextRoundFromResults(this.state);
     this.logState("after_start_next_round");
     return getPublicState(this.state, "human-1");
+  }
+
+  public getExchangePreview(): ReturnType<typeof getExchangePreview> {
+    const preview = getExchangePreview(this.state, "human-1");
+    console.log(
+      `[game] exchange_preview viewer=human-1 send=${preview?.sendCards.length ?? 0} receive=${preview?.receiveCards.length ?? 0}`
+    );
+    return preview;
   }
 
   private logState(context: string): void {

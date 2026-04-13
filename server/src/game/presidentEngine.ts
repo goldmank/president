@@ -10,6 +10,7 @@ import {
   type GameState,
   type LogEntry,
   type MoveValidationResult,
+  type ExchangePreview,
   type PlayedSet,
   type PlayerState,
   type PublicGameState,
@@ -303,25 +304,121 @@ export function createGame(options: CreateGameOptions = {}): GameState {
   return state;
 }
 
-function applyExchangeBetweenPlayers(
+function clonePlayersForNextRound(state: GameState): PlayerState[] {
+  const playerCount = state.players.length;
+  return state.players.map((player) => ({
+    id: player.id,
+    name: player.name,
+    kind: player.kind,
+    avatarColor: player.avatarColor,
+    hand: [],
+    status: "active",
+    currentRole: roleForFinishingPosition(player.finishingPosition, playerCount)
+  }));
+}
+
+function planExchangeBetweenPlayers(
   left: PlayerState,
   right: PlayerState,
   leftSendCount: number,
   leftSendsBest: boolean,
   rightSendCount: number,
   rightSendsBest: boolean
-): void {
-  const leftCards = pickExtremeCards(left.hand, leftSendCount, leftSendsBest);
-  const rightCards = pickExtremeCards(right.hand, rightSendCount, rightSendsBest);
+): { leftSent: Card[]; rightSent: Card[] } {
+  const leftSent = pickExtremeCards(left.hand, leftSendCount, leftSendsBest);
+  const rightSent = pickExtremeCards(right.hand, rightSendCount, rightSendsBest);
 
   left.hand = sortHand([
-    ...left.hand.filter((card) => !leftCards.some((sent) => sent.id === card.id)),
-    ...rightCards
+    ...left.hand.filter((card) => !leftSent.some((sent) => sent.id === card.id)),
+    ...rightSent
   ]);
   right.hand = sortHand([
-    ...right.hand.filter((card) => !rightCards.some((sent) => sent.id === card.id)),
-    ...leftCards
+    ...right.hand.filter((card) => !rightSent.some((sent) => sent.id === card.id)),
+    ...leftSent
   ]);
+
+  return { leftSent, rightSent };
+}
+
+function logPendingExchangePreview(
+  label: string,
+  fromPlayer: PlayerState,
+  toPlayer: PlayerState,
+  sentCards: Card[],
+  receivedCards: Card[]
+): void {
+  console.log(
+    [
+      `[exchange_preview] ${label}`,
+      `viewer=${fromPlayer.id}`,
+      `to=${toPlayer.id}`,
+      `send=${sentCards.map(cardLabel).join(",") || "-"}`,
+      `receive=${receivedCards.map(cardLabel).join(",") || "-"}`
+    ].join(" ")
+  );
+}
+
+function preparePendingNextRound(state: GameState): void {
+  if (state.pendingNextRoundPlayers && state.pendingExchangePreviews) {
+    return;
+  }
+
+  const pendingPlayers = clonePlayersForNextRound(state);
+  const previews: Record<string, ExchangePreview> = {};
+  dealCards(pendingPlayers, state.rules);
+
+  const president = pendingPlayers.find((player) => player.currentRole === "President");
+  const vice = pendingPlayers.find((player) => player.currentRole === "Vice");
+  const viceScum = pendingPlayers.find((player) => player.currentRole === "Vice Scum");
+  const scum = pendingPlayers.find((player) => player.currentRole === "Scum");
+
+  if (president && scum) {
+    const exchange = planExchangeBetweenPlayers(president, scum, 2, false, 2, true);
+    previews[president.id] = {
+      viewerPlayerId: president.id,
+      counterpartPlayerId: scum.id,
+      sendCards: exchange.leftSent,
+      receiveCards: exchange.rightSent
+    };
+    previews[scum.id] = {
+      viewerPlayerId: scum.id,
+      counterpartPlayerId: president.id,
+      sendCards: exchange.rightSent,
+      receiveCards: exchange.leftSent
+    };
+    logPendingExchangePreview("president-scum", president, scum, exchange.leftSent, exchange.rightSent);
+    logPendingExchangePreview("president-scum", scum, president, exchange.rightSent, exchange.leftSent);
+  }
+
+  if (vice && viceScum && vice.id !== viceScum.id) {
+    const exchange = planExchangeBetweenPlayers(vice, viceScum, 1, false, 1, true);
+    previews[vice.id] = {
+      viewerPlayerId: vice.id,
+      counterpartPlayerId: viceScum.id,
+      sendCards: exchange.leftSent,
+      receiveCards: exchange.rightSent
+    };
+    previews[viceScum.id] = {
+      viewerPlayerId: viceScum.id,
+      counterpartPlayerId: vice.id,
+      sendCards: exchange.rightSent,
+      receiveCards: exchange.leftSent
+    };
+    logPendingExchangePreview("vice-vice-scum", vice, viceScum, exchange.leftSent, exchange.rightSent);
+    logPendingExchangePreview("vice-vice-scum", viceScum, vice, exchange.rightSent, exchange.leftSent);
+  }
+
+  state.pendingNextRoundPlayers = pendingPlayers;
+  state.pendingExchangePreviews = previews;
+}
+
+export function getExchangePreview(state: GameState, viewerPlayerId: string): ExchangePreview | null {
+  if (state.phase !== "finished") {
+    throw new Error("Exchange preview is only available after a round is finished");
+  }
+
+  preparePendingNextRound(state);
+  return state.pendingExchangePreviews?.[viewerPlayerId] ?? null;
 }
 
 export function startNextRoundFromResults(state: GameState): GameState {
@@ -329,29 +426,25 @@ export function startNextRoundFromResults(state: GameState): GameState {
     throw new Error("Cannot start next round before the current round is finished");
   }
 
+  preparePendingNextRound(state);
   const playerCount = state.players.length;
   const president = state.players.find((player) => player.finishingPosition === 1);
   const vice = state.players.find((player) => player.finishingPosition === 2);
-  const viceScum = state.players.find(
-    (player) => player.finishingPosition === playerCount - 1
-  );
-  const scum = state.players.find(
-    (player) => player.finishingPosition === playerCount
-  );
+  const viceScum = state.players.find((player) => player.finishingPosition === playerCount - 1);
+  const scum = state.players.find((player) => player.finishingPosition === playerCount);
+  const pendingPlayers = state.pendingNextRoundPlayers ?? clonePlayersForNextRound(state);
 
-  state.players.forEach((player) => {
-    player.currentRole = roleForFinishingPosition(
-      player.finishingPosition,
-      playerCount
-    );
-    player.hand = [];
-    player.status = "active";
-    player.finishingPosition = undefined;
-  });
-  dealCards(state.players, state.rules);
+  state.players = pendingPlayers.map((player) => ({
+    id: player.id,
+    name: player.name,
+    kind: player.kind,
+    avatarColor: player.avatarColor,
+    hand: sortHand([...player.hand]),
+    status: "active",
+    currentRole: player.currentRole
+  }));
 
   if (president && scum) {
-    applyExchangeBetweenPlayers(president, scum, 2, false, 2, true);
     addLog(
       state,
       `${president.name} exchanged 2 lowest cards with ${scum.name}'s 2 highest cards`
@@ -359,7 +452,6 @@ export function startNextRoundFromResults(state: GameState): GameState {
   }
 
   if (vice && viceScum && vice.id !== viceScum.id) {
-    applyExchangeBetweenPlayers(vice, viceScum, 1, false, 1, true);
     addLog(
       state,
       `${vice.name} exchanged 1 lowest card with ${viceScum.name}'s highest card`
@@ -373,6 +465,8 @@ export function startNextRoundFromResults(state: GameState): GameState {
   state.roundActionCount = 0;
   state.roundExpectedActions = state.players.length;
   state.currentTurnPlayerId = findStartingPlayerId(state.players);
+  state.pendingNextRoundPlayers = undefined;
+  state.pendingExchangePreviews = undefined;
   state.updatedAt = now();
   addLog(
     state,

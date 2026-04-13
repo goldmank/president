@@ -45,6 +45,8 @@ export interface GameState {
   phase: GamePhase;
   rules: RulesConfig;
   players: PlayerState[];
+  pendingNextRoundPlayers?: PlayerState[];
+  pendingExchangePreviews?: Record<string, ExchangePreview>;
   currentTurnPlayerId: string;
   lastSuccessfulPlayerId: string | null;
   roundActionCount: number;
@@ -75,6 +77,13 @@ export interface PublicGameState {
   pile: PileState;
   requirementText: string;
   log: LogEntry[];
+}
+
+export interface ExchangePreview {
+  viewerPlayerId: string;
+  counterpartPlayerId: string;
+  sendCards: Card[];
+  receiveCards: Card[];
 }
 
 export interface PlayCardsAction {

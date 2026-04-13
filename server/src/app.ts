@@ -87,5 +87,15 @@ export function createApp(): express.Express {
     }
   });
 
+  app.get("/game/exchange-preview", (_request, response) => {
+    try {
+      response.json(games.getExchangePreview());
+    } catch (error) {
+      response.status(400).json({
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
   return app;
 }

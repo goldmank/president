@@ -184,6 +184,27 @@ class PublicGameStateModel {
       players.firstWhere((player) => player.id == viewerPlayerId);
 }
 
+class ExchangePreviewModel {
+  const ExchangePreviewModel({
+    required this.sendCards,
+    required this.receiveCards,
+  });
+
+  final List<CardModel> sendCards;
+  final List<CardModel> receiveCards;
+
+  factory ExchangePreviewModel.fromJson(Map<String, dynamic> json) {
+    return ExchangePreviewModel(
+      sendCards: (json['sendCards'] as List<dynamic>)
+          .map((entry) => CardModel.fromJson(entry as Map<String, dynamic>))
+          .toList(),
+      receiveCards: (json['receiveCards'] as List<dynamic>)
+          .map((entry) => CardModel.fromJson(entry as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
 class PlayActionPayload {
   const PlayActionPayload({required this.playerId, required this.cardIds});
 
