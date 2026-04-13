@@ -66,6 +66,7 @@ flutter:
     - assets/default_avatar.svg
     - assets/joker.png
     - assets/bg.jpg
+    - assets/cards.svg
     - assets/crown.svg
     - assets/award_star.svg
     - assets/military_tech.svg

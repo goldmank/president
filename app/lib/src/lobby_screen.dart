@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import 'auth_screen.dart';
 import 'game_screen.dart';
 import 'president_theme.dart';
 
@@ -83,7 +84,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
                                 0 => _LobbyTab(
                                   key: const ValueKey<String>('lobby'),
                                   onStartPractice: _openBotGame,
-                                  onSignUp: _showSignUpPlaceholder,
+                                  onSignUp: _openAuthFlow,
                                 ),
                                 1 => _RankingTab(
                                   key: const ValueKey<String>('ranking'),
@@ -126,9 +127,11 @@ class _LobbyScreenState extends State<LobbyScreen> {
     );
   }
 
-  void _showSignUpPlaceholder() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Sign up flow is not wired yet.')),
+  Future<void> _openAuthFlow() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext context) => const AuthScreen(),
+      ),
     );
   }
 
@@ -449,7 +452,7 @@ class _LobbyTab extends StatelessWidget {
           body:
               'Start a quick match against AI players and practice reading the table before you jump into ranked rooms.',
           buttonLabel: 'PLAY',
-          icon: Icons.smart_toy_rounded,
+          iconAsset: 'assets/cards.svg',
           buttonIcon: Icons.play_arrow_rounded,
           accent: presidentText,
           background: const LinearGradient(
@@ -485,30 +488,34 @@ class _LobbyTab extends StatelessWidget {
               Row(
                 children: <Widget>[
                   Expanded(
-                    child: TextField(
-                      enabled: false,
-                      decoration: InputDecoration(
-                        hintText: 'Enter room code',
-                        hintStyle: const TextStyle(color: presidentOutline),
-                        filled: true,
-                        fillColor: presidentSurfaceHighest,
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(16),
-                          borderSide: BorderSide.none,
-                        ),
-                        contentPadding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 16,
+                    child: GestureDetector(
+                      onTap: onSignUp,
+                      child: AbsorbPointer(
+                        child: TextField(
+                          decoration: InputDecoration(
+                            hintText: 'Enter room code',
+                            hintStyle: const TextStyle(color: presidentOutline),
+                            filled: true,
+                            fillColor: presidentSurfaceHighest,
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(16),
+                              borderSide: BorderSide.none,
+                            ),
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 16,
+                              vertical: 16,
+                            ),
+                          ),
                         ),
                       ),
                     ),
                   ),
                   const SizedBox(width: 10),
                   FilledButton(
-                    onPressed: null,
+                    onPressed: onSignUp,
                     style: FilledButton.styleFrom(
                       backgroundColor: presidentSurfaceHighest,
-                      foregroundColor: presidentMuted,
+                      foregroundColor: presidentText,
                       padding: const EdgeInsets.symmetric(
                         horizontal: 18,
                         vertical: 18,
@@ -806,17 +813,19 @@ class _HeroCard extends StatelessWidget {
     required this.title,
     required this.body,
     required this.buttonLabel,
-    required this.icon,
+    this.icon,
+    this.iconAsset,
     required this.buttonIcon,
     required this.accent,
     required this.background,
     required this.onPressed,
-  });
+  }) : assert(icon != null || iconAsset != null);
 
   final String title;
   final String body;
   final String buttonLabel;
-  final IconData icon;
+  final IconData? icon;
+  final String? iconAsset;
   final IconData buttonIcon;
   final Color accent;
   final Gradient background;
@@ -840,7 +849,15 @@ class _HeroCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(icon, color: accent, size: compact ? 24 : 30),
+              if (iconAsset != null)
+                SvgPicture.asset(
+                  iconAsset!,
+                  width: compact ? 24 : 30,
+                  height: compact ? 24 : 30,
+                  colorFilter: ColorFilter.mode(accent, BlendMode.srcIn),
+                )
+              else
+                Icon(icon, color: accent, size: compact ? 24 : 30),
               SizedBox(height: compact ? 18 : 24),
               SizedBox(
                 width: double.infinity,
