@@ -106,6 +106,7 @@ export function createApp(
     const userId = request.body?.userId;
     const displayName = request.body?.displayName;
     const rankScore = request.body?.rankScore;
+    const photoUrl = request.body?.photoUrl;
     if (typeof userId !== "string" || userId.trim().length === 0) {
       response.status(400).json({ error: "userId is required" });
       return;
@@ -118,12 +119,17 @@ export function createApp(
       response.status(400).json({ error: "rankScore is required" });
       return;
     }
+    if (photoUrl != null && typeof photoUrl !== "string") {
+      response.status(400).json({ error: "photoUrl must be a string" });
+      return;
+    }
 
     response.json(
       matchmaking.enqueuePlayer({
         userId: userId.trim(),
         displayName: displayName.trim(),
-        rankScore
+        rankScore,
+        photoUrl: typeof photoUrl === "string" ? photoUrl.trim() : null
       })
     );
   });
@@ -146,6 +152,7 @@ export function createApp(
     const userId = request.body?.userId;
     const displayName = request.body?.displayName;
     const rankScore = request.body?.rankScore;
+    const photoUrl = request.body?.photoUrl;
     if (typeof userId !== "string" || userId.trim().length === 0) {
       response.status(400).json({ error: "userId is required" });
       return;
@@ -158,11 +165,16 @@ export function createApp(
       response.status(400).json({ error: "rankScore is required" });
       return;
     }
+    if (photoUrl != null && typeof photoUrl !== "string") {
+      response.status(400).json({ error: "photoUrl must be a string" });
+      return;
+    }
 
     const room = privateRooms.createRoom({
       userId: userId.trim(),
       displayName: displayName.trim(),
       rankScore,
+      photoUrl: typeof photoUrl === "string" ? photoUrl.trim() : null,
     });
     console.log(
       `[private_room] create code=${room.code} host=${room.hostUserId} seats=${room.seats.length} status=${room.status}`
@@ -175,6 +187,7 @@ export function createApp(
     const userId = request.body?.userId;
     const displayName = request.body?.displayName;
     const rankScore = request.body?.rankScore;
+    const photoUrl = request.body?.photoUrl;
     if (typeof code !== "string" || code.trim().length === 0) {
       response.status(400).json({ error: "code is required" });
       return;
@@ -191,15 +204,45 @@ export function createApp(
       response.status(400).json({ error: "rankScore is required" });
       return;
     }
+    if (photoUrl != null && typeof photoUrl !== "string") {
+      response.status(400).json({ error: "photoUrl must be a string" });
+      return;
+    }
 
     try {
       const room = privateRooms.joinRoom(code, {
         userId: userId.trim(),
         displayName: displayName.trim(),
         rankScore,
+        photoUrl: typeof photoUrl === "string" ? photoUrl.trim() : null,
       });
       console.log(
         `[private_room] join code=${room.code} user=${userId.trim()} seats=${room.seats.length} status=${room.status}`
+      );
+      response.json(room);
+    } catch (error) {
+      response.status(400).json({
+        error: error instanceof Error ? error.message : "Unknown error",
+      });
+    }
+  });
+
+  app.post("/private-room/start", (request, response) => {
+    const code = request.body?.code;
+    const userId = request.body?.userId;
+    if (typeof code !== "string" || code.trim().length === 0) {
+      response.status(400).json({ error: "code is required" });
+      return;
+    }
+    if (typeof userId !== "string" || userId.trim().length === 0) {
+      response.status(400).json({ error: "userId is required" });
+      return;
+    }
+
+    try {
+      const room = privateRooms.startRoom(code, userId.trim());
+      console.log(
+        `[private_room] start code=${room.code} host=${userId.trim()} seats=${room.seats.length} status=${room.status}`
       );
       response.json(room);
     } catch (error) {

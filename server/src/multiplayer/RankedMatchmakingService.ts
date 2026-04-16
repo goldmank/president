@@ -17,6 +17,7 @@ interface EnqueuePlayerInput {
   userId: string;
   displayName: string;
   rankScore: number;
+  photoUrl?: string | null;
 }
 
 const MIN_PLAYERS = 4;
@@ -61,6 +62,7 @@ export class RankedMatchmakingService {
       userId: input.userId,
       displayName: input.displayName.trim() || "Player",
       rankScore: Math.max(0, Math.round(input.rankScore)),
+      photoUrl: input.photoUrl?.trim() || null,
       queuedAt: now,
       maxWaitMs: MAX_WAIT_MS,
       status: "queueing"
@@ -173,6 +175,7 @@ export class RankedMatchmakingService {
       playerId: entry.userId,
       displayName: entry.displayName,
       rankScore: entry.rankScore,
+      photoUrl: entry.photoUrl?.trim() || null,
       isBot: false,
       connectionStatus: "connected"
     }));
@@ -190,6 +193,7 @@ export class RankedMatchmakingService {
         rankScore: humanSeats.length === 0
           ? 0
           : humanSeats[index % humanSeats.length].rankScore,
+        photoUrl: null,
         isBot: true,
         connectionStatus: "bot"
       }))

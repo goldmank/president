@@ -13,6 +13,8 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   bool _doubleDeck = false;
+  bool _musicEnabled = true;
+  bool _sfxEnabled = true;
   double _aiDifficulty = 4;
 
   @override
@@ -20,6 +22,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.initState();
     final settings = GameSettingsService.instance.currentSettings;
     _doubleDeck = settings.doubleDeck;
+    _musicEnabled = settings.musicEnabled;
+    _sfxEnabled = settings.sfxEnabled;
     _aiDifficulty = settings.aiDifficulty.toDouble();
   }
 
@@ -103,6 +107,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _doubleDeck = value;
             });
             GameSettingsService.instance.setDoubleDeck(value);
+          },
+        ),
+        const SizedBox(height: 16),
+        _RuleToggleTile(
+          title: 'Music',
+          subtitle: 'Background Audio',
+          value: _musicEnabled,
+          onChanged: (bool value) {
+            setState(() {
+              _musicEnabled = value;
+            });
+            GameSettingsService.instance.setMusicEnabled(value);
+          },
+        ),
+        const SizedBox(height: 16),
+        _RuleToggleTile(
+          title: 'SFX',
+          subtitle: 'UI And Gameplay Sounds',
+          value: _sfxEnabled,
+          onChanged: (bool value) {
+            setState(() {
+              _sfxEnabled = value;
+            });
+            GameSettingsService.instance.setSfxEnabled(value);
           },
         ),
         const SizedBox(height: 22),
@@ -267,7 +295,7 @@ class _SettingsHeader extends StatelessWidget {
             ),
             const SizedBox(width: 8),
             const Text(
-              'THE TABLE',
+              'PRESIDENT',
               style: TextStyle(
                 color: presidentPrimary,
                 fontSize: 28,

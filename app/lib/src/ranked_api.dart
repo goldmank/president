@@ -25,7 +25,9 @@ class RankedApi {
     required String displayName,
     required int rankScore,
   }) async {
-    _log('enqueue.start userId=$userId rankScore=$rankScore displayName=$displayName');
+    _log(
+      'enqueue.start userId=$userId rankScore=$rankScore displayName=$displayName',
+    );
     final response = await _client.post(
       _httpUri('/ranked/queue'),
       headers: _headers,
@@ -35,7 +37,9 @@ class RankedApi {
         'rankScore': rankScore,
       }),
     );
-    _log('enqueue.response status=${response.statusCode} body=${_compactBody(response.body)}');
+    _log(
+      'enqueue.response status=${response.statusCode} body=${_compactBody(response.body)}',
+    );
     return RankedQueueTicketModel.fromJson(_decodePayload(response));
   }
 
@@ -45,26 +49,30 @@ class RankedApi {
       _httpUri('/ranked/queue/$ticketId'),
       headers: _headers,
     );
-    _log('cancelQueue.response status=${response.statusCode} body=${_compactBody(response.body)}');
+    _log(
+      'cancelQueue.response status=${response.statusCode} body=${_compactBody(response.body)}',
+    );
     _decodePayload(response);
   }
 
   WebSocketChannel connect(String ticketId) {
-    final uri = _webSocketUri('/ranked/ws', queryParameters: <String, String>{
-      'ticketId': ticketId,
-    });
-    _log('rankedWs.connect uri=$uri');
-    return WebSocketChannel.connect(
-      uri,
+    final uri = _webSocketUri(
+      '/ranked/ws',
+      queryParameters: <String, String>{'ticketId': ticketId},
     );
+    _log('rankedWs.connect uri=$uri');
+    return WebSocketChannel.connect(uri);
   }
 
   Future<PrivateRoomSnapshotModel> createPrivateRoom({
     required String userId,
     required String displayName,
     required int rankScore,
+    String? photoUrl,
   }) async {
-    _log('privateRoom.create.start userId=$userId rankScore=$rankScore displayName=$displayName');
+    _log(
+      'privateRoom.create.start userId=$userId rankScore=$rankScore displayName=$displayName',
+    );
     final response = await _client.post(
       _httpUri('/private-room'),
       headers: _headers,
@@ -72,9 +80,12 @@ class RankedApi {
         'userId': userId,
         'displayName': displayName,
         'rankScore': rankScore,
+        'photoUrl': photoUrl,
       }),
     );
-    _log('privateRoom.create.response status=${response.statusCode} body=${_compactBody(response.body)}');
+    _log(
+      'privateRoom.create.response status=${response.statusCode} body=${_compactBody(response.body)}',
+    );
     return PrivateRoomSnapshotModel.fromJson(_decodePayload(response));
   }
 
@@ -83,8 +94,11 @@ class RankedApi {
     required String userId,
     required String displayName,
     required int rankScore,
+    String? photoUrl,
   }) async {
-    _log('privateRoom.join.start code=${code.trim().toUpperCase()} userId=$userId rankScore=$rankScore displayName=$displayName');
+    _log(
+      'privateRoom.join.start code=${code.trim().toUpperCase()} userId=$userId rankScore=$rankScore displayName=$displayName',
+    );
     final response = await _client.post(
       _httpUri('/private-room/join'),
       headers: _headers,
@@ -93,9 +107,12 @@ class RankedApi {
         'userId': userId,
         'displayName': displayName,
         'rankScore': rankScore,
+        'photoUrl': photoUrl,
       }),
     );
-    _log('privateRoom.join.response status=${response.statusCode} body=${_compactBody(response.body)}');
+    _log(
+      'privateRoom.join.response status=${response.statusCode} body=${_compactBody(response.body)}',
+    );
     return PrivateRoomSnapshotModel.fromJson(_decodePayload(response));
   }
 
@@ -106,7 +123,29 @@ class RankedApi {
       _httpUri('/private-room/$normalizedCode'),
       headers: _headers,
     );
-    _log('privateRoom.get.response code=$normalizedCode status=${response.statusCode} body=${_compactBody(response.body)}');
+    _log(
+      'privateRoom.get.response code=$normalizedCode status=${response.statusCode} body=${_compactBody(response.body)}',
+    );
+    return PrivateRoomSnapshotModel.fromJson(_decodePayload(response));
+  }
+
+  Future<PrivateRoomSnapshotModel> startPrivateRoom({
+    required String code,
+    required String userId,
+  }) async {
+    final normalizedCode = code.trim().toUpperCase();
+    _log('privateRoom.start.start code=$normalizedCode userId=$userId');
+    final response = await _client.post(
+      _httpUri('/private-room/start'),
+      headers: _headers,
+      body: jsonEncode(<String, dynamic>{
+        'code': normalizedCode,
+        'userId': userId,
+      }),
+    );
+    _log(
+      'privateRoom.start.response code=$normalizedCode status=${response.statusCode} body=${_compactBody(response.body)}',
+    );
     return PrivateRoomSnapshotModel.fromJson(_decodePayload(response));
   }
 

@@ -9,7 +9,7 @@ class PresidentApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'President',
+      title: 'PRESIDENT',
       debugShowCheckedModeBanner: false,
       theme: buildPresidentTheme(),
       home: const LobbyScreen(),

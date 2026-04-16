@@ -38,6 +38,7 @@ class RankedRoomSeatModel {
     required this.playerId,
     required this.displayName,
     required this.rankScore,
+    this.photoUrl,
     required this.isBot,
     required this.connectionStatus,
   });
@@ -45,6 +46,7 @@ class RankedRoomSeatModel {
   final String playerId;
   final String displayName;
   final int rankScore;
+  final String? photoUrl;
   final bool isBot;
   final String connectionStatus;
 
@@ -53,6 +55,7 @@ class RankedRoomSeatModel {
       playerId: json['playerId'] as String,
       displayName: json['displayName'] as String,
       rankScore: (json['rankScore'] as num).toInt(),
+      photoUrl: json['photoUrl'] as String?,
       isBot: json['isBot'] as bool,
       connectionStatus: json['connectionStatus'] as String,
     );

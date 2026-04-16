@@ -257,9 +257,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
 
     final roomCode = _roomCodeController.text.trim().toUpperCase();
     if (roomCode.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a room code first.')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Enter a room code first.')));
       return;
     }
 
@@ -267,7 +267,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
         ? _user!.displayName!.trim()
         : 'Player';
     final rankScore = UserProgressService.instance.currentProgress.score;
-    _log('privateRoom.join.request code=$roomCode userId=${_user!.uid} rankScore=$rankScore');
+    _log(
+      'privateRoom.join.request code=$roomCode userId=${_user!.uid} rankScore=$rankScore',
+    );
 
     unawaited(() async {
       try {
@@ -276,8 +278,11 @@ class _LobbyScreenState extends State<LobbyScreen> {
           userId: _user!.uid,
           displayName: displayName,
           rankScore: rankScore,
+          photoUrl: _user!.photoURL,
         );
-        _log('privateRoom.join.success code=${room.code} seats=${room.seats.length} status=${room.status}');
+        _log(
+          'privateRoom.join.success code=${room.code} seats=${room.seats.length} status=${room.status}',
+        );
         if (!mounted) {
           return;
         }
@@ -286,6 +291,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
             builder: (BuildContext context) => PrivateRoomScreen(
               initialRoom: room,
               isHost: room.hostUserId == _user!.uid,
+              currentUserId: _user!.uid,
             ),
           ),
         );
@@ -334,22 +340,30 @@ class _LobbyScreenState extends State<LobbyScreen> {
         ? _user!.displayName!.trim()
         : 'Player';
     final rankScore = UserProgressService.instance.currentProgress.score;
-    _log('privateRoom.create.request userId=${_user!.uid} rankScore=$rankScore');
+    _log(
+      'privateRoom.create.request userId=${_user!.uid} rankScore=$rankScore',
+    );
 
     try {
       final room = await _rankedApi.createPrivateRoom(
         userId: _user!.uid,
         displayName: displayName,
         rankScore: rankScore,
+        photoUrl: _user!.photoURL,
       );
-      _log('privateRoom.create.success code=${room.code} seats=${room.seats.length} status=${room.status}');
+      _log(
+        'privateRoom.create.success code=${room.code} seats=${room.seats.length} status=${room.status}',
+      );
       if (!mounted) {
         return;
       }
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (BuildContext context) =>
-              PrivateRoomScreen(initialRoom: room, isHost: true),
+          builder: (BuildContext context) => PrivateRoomScreen(
+            initialRoom: room,
+            isHost: true,
+            currentUserId: _user!.uid,
+          ),
         ),
       );
     } catch (error) {
@@ -385,7 +399,7 @@ class _TopBar extends StatelessWidget {
         const SizedBox(width: 14),
         const Expanded(
           child: Text(
-            'THE TABLE',
+            'PRESIDENT',
             style: TextStyle(
               color: presidentPrimary,
               fontSize: 28,
@@ -433,7 +447,7 @@ class _LobbyDrawer extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: const <Widget>[
                   Text(
-                    'THE TABLE',
+                    'PRESIDENT',
                     style: TextStyle(
                       color: presidentPrimary,
                       fontSize: 26,
@@ -1207,10 +1221,12 @@ class _HeroCard extends StatelessWidget {
                       child: FilledButton(
                         onPressed: onPressed,
                         style: FilledButton.styleFrom(
-                          backgroundColor:
-                              enabled ? accent : presidentSurfaceHighest,
-                          foregroundColor:
-                              enabled ? Colors.black : presidentMuted,
+                          backgroundColor: enabled
+                              ? accent
+                              : presidentSurfaceHighest,
+                          foregroundColor: enabled
+                              ? Colors.black
+                              : presidentMuted,
                           padding: EdgeInsets.symmetric(
                             horizontal: compact ? 10 : 14,
                             vertical: compact ? 14 : 16,

@@ -68,7 +68,7 @@ class _AuthScreenState extends State<AuthScreen> {
                         child: Column(
                           children: <Widget>[
                             const Text(
-                              'THE TABLE',
+                              'PRESIDENT',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: presidentPrimary,
@@ -80,7 +80,7 @@ class _AuthScreenState extends State<AuthScreen> {
                             ),
                             const SizedBox(height: 12),
                             const Text(
-                              'PRESIDENT CARD GAME',
+                              'CARD GAME',
                               textAlign: TextAlign.center,
                               style: TextStyle(
                                 color: presidentMuted,

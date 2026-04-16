@@ -8,6 +8,7 @@ export interface RankedQueueTicket {
   userId: string;
   displayName: string;
   rankScore: number;
+  photoUrl?: string | null;
   queuedAt: number;
   maxWaitMs: number;
   status: RankedQueueStatus;
@@ -18,6 +19,7 @@ export interface RankedRoomSeat {
   playerId: string;
   displayName: string;
   rankScore: number;
+  photoUrl?: string | null;
   isBot: boolean;
   connectionStatus: RankedSeatConnectionStatus;
 }

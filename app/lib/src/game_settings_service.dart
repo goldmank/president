@@ -56,6 +56,18 @@ class GameSettingsService extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setMusicEnabled(bool value) async {
+    _currentSettings = _currentSettings.copyWith(musicEnabled: value);
+    await _persistCurrent();
+    notifyListeners();
+  }
+
+  Future<void> setSfxEnabled(bool value) async {
+    _currentSettings = _currentSettings.copyWith(sfxEnabled: value);
+    await _persistCurrent();
+    notifyListeners();
+  }
+
   Future<GameSettings> _loadSettingsForCurrentUser() async {
     final user = _auth.currentUser;
     if (user == null) {
