@@ -15,9 +15,16 @@ import 'president_theme.dart';
 import 'user_progress_service.dart';
 
 class GameScreen extends StatefulWidget {
-  const GameScreen({super.key, this.initialPlayerCount});
+  const GameScreen({
+    super.key,
+    this.initialPlayerCount,
+    this.privateRoomCode,
+    this.privateRoomPlayerId,
+  });
 
   final int? initialPlayerCount;
+  final String? privateRoomCode;
+  final String? privateRoomPlayerId;
 
   @override
   State<GameScreen> createState() => _GameScreenState();
@@ -50,18 +57,30 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   String? _banner;
   Timer? _bannerTimer;
   Timer? _botTimer;
+  Timer? _multiplayerPollTimer;
   _LayoutSnapshot? _layout;
+
+  bool get _isPrivateRoomMatch =>
+      widget.privateRoomCode != null && widget.privateRoomPlayerId != null;
+
+  String get _privateRoomCode => widget.privateRoomCode!;
+
+  String get _privateRoomPlayerId => widget.privateRoomPlayerId!;
 
   @override
   void initState() {
     super.initState();
     _loadGame(playerCount: widget.initialPlayerCount);
+    if (_isPrivateRoomMatch) {
+      _startMultiplayerPolling();
+    }
   }
 
   @override
   void dispose() {
     _bannerTimer?.cancel();
     _botTimer?.cancel();
+    _multiplayerPollTimer?.cancel();
     for (final timer in _passBubbleTimers.values) {
       timer.cancel();
     }
@@ -106,6 +125,79 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
+  void _startMultiplayerPolling() {
+    _multiplayerPollTimer?.cancel();
+    _multiplayerPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      unawaited(_refreshPrivateRoomGameState());
+    });
+  }
+
+  Future<void> _refreshPrivateRoomGameState() async {
+    if (!_isPrivateRoomMatch || _loading || _busy) {
+      return;
+    }
+
+    try {
+      final next = await _api.getPrivateRoomGameState(
+        code: _privateRoomCode,
+        playerId: _privateRoomPlayerId,
+      );
+      if (!mounted) {
+        return;
+      }
+      final previous = _state;
+      if (previous != null &&
+          _stateSignature(previous) == _stateSignature(next)) {
+        return;
+      }
+      await _setGameState(next);
+    } catch (error) {
+      debugPrint('[private_room_game] refresh_error $error');
+    }
+  }
+
+  String _stateSignature(PublicGameStateModel state) {
+    final String players = state.players
+        .map(
+          (player) => [
+            player.id,
+            player.handCount,
+            player.status.name,
+            player.finishingPosition ?? '-',
+            player.currentRole ?? '-',
+            player.isCurrentTurn ? '1' : '0',
+          ].join(':'),
+        )
+        .join('|');
+    final String hand = state.viewerHand.map((card) => card.id).join(',');
+    final String pile = state.pile.history
+        .map(
+          (entry) =>
+              '${entry.byPlayerId}:${entry.timestamp}:${entry.cards.map((card) => card.id).join(",")}',
+        )
+        .join('|');
+    final PlayedSet? currentSet = state.pile.currentSet;
+    final String currentSetSignature = currentSet == null
+        ? '-'
+        : '${currentSet.byPlayerId}:${currentSet.timestamp}:${currentSet.cards.map((card) => card.id).join(",")}';
+    final String latestLog = state.log.isEmpty
+        ? '-'
+        : '${state.log.last.id}:${state.log.last.timestamp}';
+    return [
+      state.id,
+      state.phase.name,
+      state.viewerPlayerId,
+      state.currentTurnPlayerId,
+      state.lastSuccessfulPlayerId ?? '-',
+      players,
+      hand,
+      currentSetSignature,
+      pile,
+      state.requirementText,
+      latestLog,
+    ].join('~');
+  }
+
   Future<void> _loadGame({int? playerCount}) async {
     _bannerTimer?.cancel();
     _botTimer?.cancel();
@@ -129,11 +221,19 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
 
     try {
-      final settings = GameSettingsService.instance.currentSettings;
-      final state = await _api.createGame(
-        playerCount: playerCount,
-        rules: <String, dynamic>{'doubleDeck': settings.doubleDeck},
-      );
+      final PublicGameStateModel state;
+      if (_isPrivateRoomMatch) {
+        state = await _api.getPrivateRoomGameState(
+          code: _privateRoomCode,
+          playerId: _privateRoomPlayerId,
+        );
+      } else {
+        final settings = GameSettingsService.instance.currentSettings;
+        state = await _api.createGame(
+          playerCount: playerCount,
+          rules: <String, dynamic>{'doubleDeck': settings.doubleDeck},
+        );
+      }
       if (!mounted) {
         return;
       }
@@ -159,6 +259,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _startDebugNewGame(int playerCount) async {
+    if (_isPrivateRoomMatch) {
+      _showBanner('Debug new game is unavailable in private multiplayer.');
+      return;
+    }
     if (!_debugNewGamesUseRandomRoles) {
       await _loadGame(playerCount: playerCount);
       return;
@@ -324,6 +428,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   void _scheduleBotTurnIfNeeded() {
     _botTimer?.cancel();
+    if (_isPrivateRoomMatch) {
+      return;
+    }
     final state = _state;
     if (state == null ||
         state.phase != GamePhase.playing ||
@@ -494,15 +601,28 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       }
 
       final next = selectedCards.isEmpty
-          ? await _api.submitPass(
-              PassActionPayload(playerId: state.viewerPlayerId),
-            )
-          : await _api.submitPlay(
-              PlayActionPayload(
-                playerId: state.viewerPlayerId,
-                cardIds: selectedCards.map((card) => card.id).toList(),
-              ),
-            );
+          ? (_isPrivateRoomMatch
+                ? await _api.submitPrivateRoomPass(
+                    code: _privateRoomCode,
+                    payload: PassActionPayload(playerId: state.viewerPlayerId),
+                  )
+                : await _api.submitPass(
+                    PassActionPayload(playerId: state.viewerPlayerId),
+                  ))
+          : (_isPrivateRoomMatch
+                ? await _api.submitPrivateRoomPlay(
+                    code: _privateRoomCode,
+                    payload: PlayActionPayload(
+                      playerId: state.viewerPlayerId,
+                      cardIds: selectedCards.map((card) => card.id).toList(),
+                    ),
+                  )
+                : await _api.submitPlay(
+                    PlayActionPayload(
+                      playerId: state.viewerPlayerId,
+                      cardIds: selectedCards.map((card) => card.id).toList(),
+                    ),
+                  ));
 
       if (!mounted) {
         return;
@@ -791,7 +911,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   Future<void> _loadExchangePreview() async {
     try {
-      final preview = await _api.getExchangePreview();
+      final preview = _isPrivateRoomMatch
+          ? await _api.getPrivateRoomExchangePreview(
+              code: _privateRoomCode,
+              playerId: _privateRoomPlayerId,
+            )
+          : await _api.getExchangePreview();
       debugPrint(
         '[exchange_preview] send=${preview == null ? "-" : preview.sendCards.map((card) => rankLabel(card.rank)).join(",")} '
         'receive=${preview == null ? "-" : preview.receiveCards.map((card) => rankLabel(card.rank)).join(",")}',
@@ -845,7 +970,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       });
 
       try {
-        final next = await _api.startNextRound();
+        final next = _isPrivateRoomMatch
+            ? await _api.startPrivateRoomNextRound(
+                code: _privateRoomCode,
+                playerId: _privateRoomPlayerId,
+              )
+            : await _api.startNextRound();
         if (!mounted) {
           return;
         }
@@ -1194,7 +1324,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           left: 0,
           child: _LeaveGameButton(onPressed: _confirmExitGame),
         ),
-        if (AppConfig.instance.isDev)
+        if (AppConfig.instance.isDev && !_isPrivateRoomMatch)
           Positioned(
             top: 0,
             right: 0,

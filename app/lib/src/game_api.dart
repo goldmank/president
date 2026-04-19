@@ -28,6 +28,43 @@ class GameApi {
     return _decodeState(response);
   }
 
+  Future<PublicGameStateModel> getPrivateRoomGameState({
+    required String code,
+    required String playerId,
+  }) async {
+    final response = await _client.get(
+      _uri(
+        '/private-room/${code.trim().toUpperCase()}/game?playerId=${Uri.encodeQueryComponent(playerId)}',
+      ),
+      headers: _headers,
+    );
+    return _decodeState(response);
+  }
+
+  Future<PublicGameStateModel> submitPrivateRoomPlay({
+    required String code,
+    required PlayActionPayload payload,
+  }) async {
+    final response = await _client.post(
+      _uri('/private-room/${code.trim().toUpperCase()}/game/action'),
+      headers: _headers,
+      body: jsonEncode(payload.toJson()),
+    );
+    return _decodeState(response);
+  }
+
+  Future<PublicGameStateModel> submitPrivateRoomPass({
+    required String code,
+    required PassActionPayload payload,
+  }) async {
+    final response = await _client.post(
+      _uri('/private-room/${code.trim().toUpperCase()}/game/action'),
+      headers: _headers,
+      body: jsonEncode(payload.toJson()),
+    );
+    return _decodeState(response);
+  }
+
   Future<PublicGameStateModel> submitPlay(PlayActionPayload payload) async {
     final response = await _client.post(
       _uri('/game/action'),
@@ -82,8 +119,38 @@ class GameApi {
     return ExchangePreviewModel.fromJson(payload);
   }
 
+  Future<ExchangePreviewModel?> getPrivateRoomExchangePreview({
+    required String code,
+    required String playerId,
+  }) async {
+    final response = await _client.get(
+      _uri(
+        '/private-room/${code.trim().toUpperCase()}/game/exchange-preview?playerId=${Uri.encodeQueryComponent(playerId)}',
+      ),
+      headers: _headers,
+    );
+    final payload = _decodePayload(response);
+    if (payload == null) {
+      return null;
+    }
+    return ExchangePreviewModel.fromJson(payload);
+  }
+
+  Future<PublicGameStateModel> startPrivateRoomNextRound({
+    required String code,
+    required String playerId,
+  }) async {
+    final response = await _client.post(
+      _uri('/private-room/${code.trim().toUpperCase()}/game/next-round'),
+      headers: _headers,
+      body: jsonEncode(<String, dynamic>{'playerId': playerId}),
+    );
+    return _decodeState(response);
+  }
+
   static const Map<String, String> _headers = <String, String>{
     'Content-Type': 'application/json',
+    'ngrok-skip-browser-warning': '1',
   };
 
   PublicGameStateModel _decodeState(http.Response response) {

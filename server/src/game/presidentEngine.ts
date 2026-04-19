@@ -12,6 +12,7 @@ import {
   type MoveValidationResult,
   type ExchangePreview,
   type PlayedSet,
+  type PlayerKind,
   type PlayerState,
   type PublicGameState,
   type RankValue,
@@ -20,6 +21,7 @@ import {
 import { now, shuffle, sortHand } from "./random.js";
 
 const botColors = ["#f97316", "#22c55e", "#a855f7", "#06b6d4", "#ef4444", "#f59e0b"];
+const humanColors = ["#3b82f6", "#ec4899", "#14b8a6", "#f59e0b", "#8b5cf6", "#ef4444"];
 
 export interface MoveOption {
   cardIds: string[];
@@ -27,10 +29,18 @@ export interface MoveOption {
   count: number;
 }
 
+export interface CreateGamePlayer {
+  id: string;
+  name: string;
+  kind: PlayerKind;
+  avatarColor?: string;
+}
+
 export interface CreateGameOptions {
   playerCount?: number;
   humanName?: string;
   botPrefix?: string;
+  players?: CreateGamePlayer[];
   rules?: Partial<RulesConfig>;
 }
 
@@ -70,6 +80,25 @@ function createPlayers(playerCount: number, humanName: string, botPrefix: string
   }
 
   return players;
+}
+
+function resolveAvatarColor(index: number, kind: PlayerKind): string {
+  if (kind === "bot") {
+    return botColors[index % botColors.length];
+  }
+
+  return humanColors[index % humanColors.length];
+}
+
+function createPlayersFromSpecs(players: CreateGamePlayer[]): PlayerState[] {
+  return players.map((player, index) => ({
+    id: player.id,
+    name: player.name,
+    kind: player.kind,
+    avatarColor: player.avatarColor ?? resolveAvatarColor(index, player.kind),
+    hand: [],
+    status: "active"
+  }));
 }
 
 function dealCards(players: PlayerState[], rules: RulesConfig): void {
@@ -275,8 +304,24 @@ export function createGame(options: CreateGameOptions = {}): GameState {
     ...defaultRulesConfig,
     ...options.rules
   };
-  const playerCount = Math.min(Math.max(options.playerCount ?? 4, rules.minPlayers), rules.maxPlayers);
-  const players = createPlayers(playerCount, options.humanName ?? "You", options.botPrefix ?? "Bot");
+  const requestedPlayerCount = options.players?.length ?? options.playerCount ?? 4;
+  const playerCount = Math.min(
+    Math.max(requestedPlayerCount, rules.minPlayers),
+    rules.maxPlayers
+  );
+  if (options.players != null && options.players.length !== playerCount) {
+    throw new Error(
+      `Custom player list must contain between ${rules.minPlayers} and ${rules.maxPlayers} players`
+    );
+  }
+  const players =
+    options.players != null && options.players.length > 0
+      ? createPlayersFromSpecs(options.players)
+      : createPlayers(
+          playerCount,
+          options.humanName ?? "You",
+          options.botPrefix ?? "Bot"
+        );
   dealCards(players, rules);
   players.forEach((player) => {
     player.currentRole = "Citizen";

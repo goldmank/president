@@ -8,8 +8,8 @@ interface PlayerInput {
   photoUrl?: string | null;
 }
 
-const MAX_PLAYERS = 8;
 const READY_PLAYER_COUNT = 4;
+const MAX_PLAYERS = READY_PLAYER_COUNT;
 const CODE_LENGTH = 6;
 const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const botNames = [
@@ -74,6 +74,13 @@ export class PrivateRoomService {
     }
 
     room.seats = [...room.seats, this.humanSeat(player)];
+    const humanSeats = room.seats.filter((seat) => !seat.isBot);
+    if (humanSeats.length === READY_PLAYER_COUNT) {
+      room.status = "ready";
+      console.log(
+        `[private_room_service] join code=${normalizedCode} user=${player.userId} result=auto_started humans=${humanSeats.length} status=${room.status}`
+      );
+    }
     console.log(
       `[private_room_service] join code=${normalizedCode} user=${player.userId} seats=${room.seats.length} status=${room.status}`
     );

@@ -3,3 +3,4 @@ dist
 .DS_Store
 playwright-artifacts
 .vscode/mcp.json
+server/error-reports/

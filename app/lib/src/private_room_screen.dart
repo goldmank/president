@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:share_plus/share_plus.dart';
 
+import 'app_error.dart';
+import 'app_error_dialog.dart';
 import 'game_screen.dart';
 import 'president_theme.dart';
 import 'ranked_api.dart';
@@ -123,8 +125,14 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
       if (!mounted) {
         return;
       }
+      final info = describeAppError(
+        error,
+        fallbackCode: 3004,
+        fallbackMessage:
+            'Unable to refresh the private room right now. We will keep trying.',
+      );
       setState(() {
-        _error = error.toString();
+        _error = info.message;
       });
     }
   }
@@ -174,9 +182,15 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _error = error.toString();
-      });
+      await showAppErrorDialog(
+        context,
+        title: 'Unable To Start Match',
+        error: error,
+        fallbackCode: 3003,
+        fallbackMessage:
+            'The private match could not be started right now. Please try again in a moment.',
+        reportContext: 'private_room_start',
+      );
     } finally {
       if (mounted) {
         setState(() {
@@ -192,26 +206,17 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
       return;
     }
 
-    final humanSeats = room.seats.where((seat) => !seat.isBot).length;
-    if (humanSeats > 1) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Live private multiplayer turns are not wired yet. The host can lock the table and fill bots, but shared human turns are still next.',
-          ),
-        ),
-      );
-      return;
-    }
-
     setState(() {
       _actionBusy = true;
     });
     try {
       await Navigator.of(context).pushReplacement(
         MaterialPageRoute<void>(
-          builder: (BuildContext context) =>
-              GameScreen(initialPlayerCount: room.seats.length),
+          builder: (BuildContext context) => GameScreen(
+            initialPlayerCount: room.seats.length,
+            privateRoomCode: room.code,
+            privateRoomPlayerId: widget.currentUserId,
+          ),
         ),
       );
     } finally {
@@ -358,7 +363,9 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
                         Text(
                           room.status == 'ready'
                               ? 'Table Ready'
-                              : 'Waiting For Host',
+                              : (widget.isHost
+                                    ? 'Waiting For Players'
+                                    : 'Waiting For Host'),
                           style: const TextStyle(
                             color: presidentText,
                             fontSize: 22,
@@ -494,7 +501,17 @@ class _RoomSeatAvatar extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: normalizedPhotoUrl != null
-          ? Image.network(normalizedPhotoUrl, fit: BoxFit.cover)
+          ? Image.network(
+              normalizedPhotoUrl,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => Padding(
+                padding: const EdgeInsets.all(5),
+                child: SvgPicture.asset(
+                  'assets/default_avatar.svg',
+                  fit: BoxFit.contain,
+                ),
+              ),
+            )
           : Padding(
               padding: const EdgeInsets.all(5),
               child: SvgPicture.asset(

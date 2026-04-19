@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'app_config.dart';
+import 'app_error_dialog.dart';
 import 'auth_screen.dart';
 import 'auth_service.dart';
 import 'game_screen.dart';
@@ -31,6 +32,7 @@ class _LobbyScreenState extends State<LobbyScreen> {
   final RankedApi _rankedApi = RankedApi();
   int _selectedTab = 0;
   User? _user;
+  _LobbyPendingAction? _pendingAction;
   StreamSubscription<User?>? _authSubscription;
   VoidCallback? _progressListener;
 
@@ -77,9 +79,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
         ? _user!.displayName!.trim()
         : 'Guest';
     final avatarUrl = _user?.photoURL;
+    final pendingAction = _pendingAction;
+    final busyMessage = _busyMessage(pendingAction);
 
     return Scaffold(
       key: _scaffoldKey,
+      drawerEnableOpenDragGesture: pendingAction == null,
       drawer: _LobbyDrawer(
         isSignedIn: _user != null,
         debugScoreBonus: progressData.debugScoreBonus,
@@ -89,88 +94,96 @@ class _LobbyScreenState extends State<LobbyScreen> {
         onResetScore: _resetDebugScore,
         onLogout: _logout,
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: <Color>[
-              presidentSurfaceLowest,
-              presidentBackground,
-              Color(0xFF0D0F11),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          bottom: false,
-          child: Column(
-            children: <Widget>[
-              Expanded(
-                child: CustomScrollView(
-                  controller: _scrollController,
-                  slivers: <Widget>[
-                    SliverToBoxAdapter(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: <Widget>[
-                            _TopBar(
-                              onMenuPressed: () {
-                                _scaffoldKey.currentState?.openDrawer();
-                              },
-                              avatarUrl: avatarUrl,
-                            ),
-                            const SizedBox(height: 18),
-                            _ProfilePanel(
-                              profileName: profileName,
-                              progressData: progressData,
-                              score: score,
-                              rank: rank,
-                            ),
-                            const SizedBox(height: 18),
-                            AnimatedSwitcher(
-                              duration: const Duration(milliseconds: 220),
-                              child: switch (_selectedTab) {
-                                0 => _LobbyTab(
-                                  key: const ValueKey<String>('lobby'),
-                                  isSignedIn: _user != null,
-                                  roomCodeController: _roomCodeController,
-                                  onStartPractice: _openBotGame,
-                                  onSignUp: _openAuthFlow,
-                                  onJoinRoom: _handleJoinRoom,
-                                  onFindMatch: _openRankedMatchmaking,
-                                  onCreateMatch: _createPrivateMatch,
+      body: Stack(
+        children: <Widget>[
+          Container(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: <Color>[
+                  presidentSurfaceLowest,
+                  presidentBackground,
+                  Color(0xFF0D0F11),
+                ],
+              ),
+            ),
+            child: SafeArea(
+              bottom: false,
+              child: Column(
+                children: <Widget>[
+                  Expanded(
+                    child: CustomScrollView(
+                      controller: _scrollController,
+                      slivers: <Widget>[
+                        SliverToBoxAdapter(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                _TopBar(
+                                  onMenuPressed: () {
+                                    _scaffoldKey.currentState?.openDrawer();
+                                  },
+                                  avatarUrl: avatarUrl,
                                 ),
-                                1 => _RankingTab(
-                                  key: const ValueKey<String>('ranking'),
+                                const SizedBox(height: 18),
+                                _ProfilePanel(
+                                  profileName: profileName,
+                                  progressData: progressData,
                                   score: score,
                                   rank: rank,
                                 ),
-                                _ => _AchievementsTab(
-                                  key: const ValueKey<String>('achievements'),
+                                const SizedBox(height: 18),
+                                AnimatedSwitcher(
+                                  duration: const Duration(milliseconds: 220),
+                                  child: switch (_selectedTab) {
+                                    0 => _LobbyTab(
+                                      key: const ValueKey<String>('lobby'),
+                                      isSignedIn: _user != null,
+                                      busy: pendingAction != null,
+                                      roomCodeController: _roomCodeController,
+                                      onStartPractice: _openBotGame,
+                                      onSignUp: _openAuthFlow,
+                                      onJoinRoom: _handleJoinRoom,
+                                      onFindMatch: _openRankedMatchmaking,
+                                      onCreateMatch: _createPrivateMatch,
+                                    ),
+                                    1 => _RankingTab(
+                                      key: const ValueKey<String>('ranking'),
+                                      score: score,
+                                      rank: rank,
+                                    ),
+                                    _ => _AchievementsTab(
+                                      key: const ValueKey<String>(
+                                        'achievements',
+                                      ),
+                                    ),
+                                  },
                                 ),
-                              },
+                                const SizedBox(height: 24),
+                              ],
                             ),
-                            const SizedBox(height: 24),
-                          ],
+                          ),
                         ),
-                      ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                  _BottomTabs(
+                    selectedIndex: _selectedTab,
+                    onSelected: (int index) {
+                      setState(() {
+                        _selectedTab = index;
+                      });
+                    },
+                  ),
+                ],
               ),
-              _BottomTabs(
-                selectedIndex: _selectedTab,
-                onSelected: (int index) {
-                  setState(() {
-                    _selectedTab = index;
-                  });
-                },
-              ),
-            ],
+            ),
           ),
-        ),
+          if (busyMessage != null) _LobbyBusyOverlay(message: busyMessage),
+        ],
       ),
     );
   }
@@ -181,11 +194,6 @@ class _LobbyScreenState extends State<LobbyScreen> {
         builder: (BuildContext context) => const GameScreen(),
       ),
     );
-  }
-
-  String _formatError(Object error) {
-    final text = error.toString();
-    return text.startsWith('Exception: ') ? text.substring(11) : text;
   }
 
   Future<void> _openAuthFlow() async {
@@ -249,9 +257,12 @@ class _LobbyScreenState extends State<LobbyScreen> {
     }
   }
 
-  void _handleJoinRoom() {
+  Future<void> _handleJoinRoom() async {
+    if (_pendingAction != null) {
+      return;
+    }
     if (_user == null) {
-      _openAuthFlow();
+      await _openAuthFlow();
       return;
     }
 
@@ -271,40 +282,53 @@ class _LobbyScreenState extends State<LobbyScreen> {
       'privateRoom.join.request code=$roomCode userId=${_user!.uid} rankScore=$rankScore',
     );
 
-    unawaited(() async {
-      try {
-        final room = await _rankedApi.joinPrivateRoom(
-          code: roomCode,
-          userId: _user!.uid,
-          displayName: displayName,
-          rankScore: rankScore,
-          photoUrl: _user!.photoURL,
-        );
-        _log(
-          'privateRoom.join.success code=${room.code} seats=${room.seats.length} status=${room.status}',
-        );
-        if (!mounted) {
-          return;
-        }
-        await Navigator.of(context).push(
-          MaterialPageRoute<void>(
-            builder: (BuildContext context) => PrivateRoomScreen(
-              initialRoom: room,
-              isHost: room.hostUserId == _user!.uid,
-              currentUserId: _user!.uid,
-            ),
-          ),
-        );
-      } catch (error) {
-        _log('privateRoom.join.error code=$roomCode error=$error');
-        if (!mounted) {
-          return;
-        }
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(_formatError(error))));
+    setState(() {
+      _pendingAction = _LobbyPendingAction.joinRoom;
+    });
+    try {
+      final room = await _rankedApi.joinPrivateRoom(
+        code: roomCode,
+        userId: _user!.uid,
+        displayName: displayName,
+        rankScore: rankScore,
+        photoUrl: _user!.photoURL,
+      );
+      _log(
+        'privateRoom.join.success code=${room.code} seats=${room.seats.length} status=${room.status}',
+      );
+      if (!mounted) {
+        return;
       }
-    }());
+      setState(() {
+        _pendingAction = null;
+      });
+      await Navigator.of(context).push(
+        MaterialPageRoute<void>(
+          builder: (BuildContext context) => PrivateRoomScreen(
+            initialRoom: room,
+            isHost: room.hostUserId == _user!.uid,
+            currentUserId: _user!.uid,
+          ),
+        ),
+      );
+    } catch (error) {
+      _log('privateRoom.join.error code=$roomCode error=$error');
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _pendingAction = null;
+      });
+      await showAppErrorDialog(
+        context,
+        title: 'Unable To Join Private Match',
+        error: error,
+        fallbackCode: 3002,
+        fallbackMessage:
+            'The private match could not be joined right now. Please try again in a moment.',
+        reportContext: 'private_room_join',
+      );
+    }
   }
 
   Future<void> _openRankedMatchmaking() async {
@@ -331,6 +355,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
   }
 
   Future<void> _createPrivateMatch() async {
+    if (_pendingAction != null) {
+      return;
+    }
     if (_user == null) {
       await _openAuthFlow();
       return;
@@ -344,6 +371,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
       'privateRoom.create.request userId=${_user!.uid} rankScore=$rankScore',
     );
 
+    setState(() {
+      _pendingAction = _LobbyPendingAction.createRoom;
+    });
     try {
       final room = await _rankedApi.createPrivateRoom(
         userId: _user!.uid,
@@ -357,6 +387,9 @@ class _LobbyScreenState extends State<LobbyScreen> {
       if (!mounted) {
         return;
       }
+      setState(() {
+        _pendingAction = null;
+      });
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
           builder: (BuildContext context) => PrivateRoomScreen(
@@ -371,10 +404,27 @@ class _LobbyScreenState extends State<LobbyScreen> {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(
+      setState(() {
+        _pendingAction = null;
+      });
+      await showAppErrorDialog(
         context,
-      ).showSnackBar(SnackBar(content: Text(_formatError(error))));
+        title: 'Unable To Create Private Match',
+        error: error,
+        fallbackCode: 3001,
+        fallbackMessage:
+            'The private match could not be created right now. Please try again in a moment.',
+        reportContext: 'private_room_create',
+      );
     }
+  }
+
+  String? _busyMessage(_LobbyPendingAction? action) {
+    return switch (action) {
+      _LobbyPendingAction.joinRoom => 'Joining private match...',
+      _LobbyPendingAction.createRoom => 'Creating private match...',
+      null => null,
+    };
   }
 
   void _log(String message) {
@@ -703,6 +753,7 @@ class _LobbyTab extends StatelessWidget {
   const _LobbyTab({
     super.key,
     required this.isSignedIn,
+    required this.busy,
     required this.roomCodeController,
     required this.onStartPractice,
     required this.onSignUp,
@@ -712,6 +763,7 @@ class _LobbyTab extends StatelessWidget {
   });
 
   final bool isSignedIn;
+  final bool busy;
   final TextEditingController roomCodeController;
   final VoidCallback onStartPractice;
   final VoidCallback onSignUp;
@@ -737,7 +789,7 @@ class _LobbyTab extends StatelessWidget {
             end: Alignment.bottomRight,
             colors: <Color>[Color(0xFF2A2C2F), presidentSurfaceContainer],
           ),
-          onPressed: onStartPractice,
+          onPressed: busy ? null : onStartPractice,
         ),
         const SizedBox(height: 18),
         Container(
@@ -767,10 +819,12 @@ class _LobbyTab extends StatelessWidget {
                   Expanded(
                     child: TextField(
                       controller: roomCodeController,
-                      readOnly: !isSignedIn,
+                      readOnly: !isSignedIn || busy,
                       textCapitalization: TextCapitalization.characters,
-                      onTap: isSignedIn ? null : onSignUp,
-                      onSubmitted: isSignedIn ? (_) => onJoinRoom() : null,
+                      onTap: busy ? null : (isSignedIn ? null : onSignUp),
+                      onSubmitted: isSignedIn && !busy
+                          ? (_) => onJoinRoom()
+                          : null,
                       decoration: InputDecoration(
                         hintText: 'Enter room code',
                         hintStyle: const TextStyle(color: presidentOutline),
@@ -789,7 +843,9 @@ class _LobbyTab extends StatelessWidget {
                   ),
                   const SizedBox(width: 10),
                   FilledButton(
-                    onPressed: isSignedIn ? onJoinRoom : onSignUp,
+                    onPressed: busy
+                        ? null
+                        : (isSignedIn ? onJoinRoom : onSignUp),
                     style: FilledButton.styleFrom(
                       backgroundColor: presidentSurfaceHighest,
                       foregroundColor: presidentText,
@@ -844,10 +900,62 @@ class _LobbyTab extends StatelessWidget {
             end: Alignment.bottomRight,
             colors: <Color>[Color(0xFF342C07), Color(0xFF1D1A10)],
           ),
-          onPressed: isSignedIn ? onFindMatch : onSignUp,
-          onSecondaryPressed: isSignedIn ? onCreateMatch : null,
+          onPressed: busy ? null : (isSignedIn ? onFindMatch : onSignUp),
+          onSecondaryPressed: busy ? null : (isSignedIn ? onCreateMatch : null),
         ),
       ],
+    );
+  }
+}
+
+enum _LobbyPendingAction { joinRoom, createRoom }
+
+class _LobbyBusyOverlay extends StatelessWidget {
+  const _LobbyBusyOverlay({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned.fill(
+      child: ColoredBox(
+        color: Colors.black.withValues(alpha: 0.56),
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 28),
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 20),
+            decoration: BoxDecoration(
+              color: presidentSurfaceContainer,
+              borderRadius: BorderRadius.circular(22),
+              border: Border.all(color: Colors.white.withValues(alpha: 0.06)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.2,
+                    color: presidentPrimary,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Flexible(
+                  child: Text(
+                    message,
+                    style: const TextStyle(
+                      color: presidentText,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1477,7 +1585,18 @@ class _ProfileAvatar extends StatelessWidget {
       ),
       clipBehavior: Clip.antiAlias,
       child: photoUrl != null && photoUrl!.isNotEmpty
-          ? Image.network(photoUrl!, fit: BoxFit.cover)
+          ? Image.network(
+              photoUrl!,
+              fit: BoxFit.cover,
+              errorBuilder: (_, _, _) => FittedBox(
+                fit: BoxFit.cover,
+                child: SizedBox(
+                  width: size * 1.22,
+                  height: size * 1.22,
+                  child: SvgPicture.asset('assets/default_avatar.svg'),
+                ),
+              ),
+            )
           : FittedBox(
               fit: BoxFit.cover,
               child: SizedBox(

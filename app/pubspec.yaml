@@ -69,7 +69,6 @@ flutter:
 
   assets:
     - .env
-    - assets/cards/white/
     - assets/default_avatar.svg
     - assets/joker.png
     - assets/bg.jpg
