@@ -5,10 +5,10 @@ import type {
   PublicGameState,
 } from "@president/shared";
 import {
+  advanceAutomatedTurns,
   createGame,
   getExchangePreview,
   getPublicState,
-  runBotsUntilHumanTurn,
   startNextRoundFromResults,
   submitAction,
 } from "../game/presidentEngine.js";
@@ -17,6 +17,7 @@ interface PrivateRoomGameSession {
   roomId: string;
   roomCode: string;
   state: GameState;
+  automationTimer?: ReturnType<typeof setTimeout>;
 }
 
 export class PrivateRoomGameService {
@@ -27,7 +28,7 @@ export class PrivateRoomGameService {
     playerId: string,
   ): PublicGameState {
     const session = this.ensureSession(room, playerId);
-    runBotsUntilHumanTurn(session.state);
+    this.syncAutomation(session);
     return getPublicState(session.state, playerId);
   }
 
@@ -39,6 +40,7 @@ export class PrivateRoomGameService {
       | { type: "pass" },
   ): PublicGameState {
     const session = this.ensureSession(room, playerId);
+    this.syncAutomation(session);
     if (action.type === "play") {
       submitAction(session.state, {
         type: "play",
@@ -51,7 +53,7 @@ export class PrivateRoomGameService {
         playerId,
       });
     }
-    runBotsUntilHumanTurn(session.state);
+    this.scheduleAutomation(session);
     return getPublicState(session.state, playerId);
   }
 
@@ -60,6 +62,7 @@ export class PrivateRoomGameService {
     playerId: string,
   ): ExchangePreview | null {
     const session = this.ensureSession(room, playerId);
+    this.syncAutomation(session);
     return getExchangePreview(session.state, playerId);
   }
 
@@ -69,7 +72,7 @@ export class PrivateRoomGameService {
   ): PublicGameState {
     const session = this.ensureSession(room, playerId);
     startNextRoundFromResults(session.state);
-    runBotsUntilHumanTurn(session.state);
+    this.scheduleAutomation(session);
     return getPublicState(session.state, playerId);
   }
 
@@ -96,12 +99,41 @@ export class PrivateRoomGameService {
         })),
       }),
     };
-    runBotsUntilHumanTurn(session.state);
     this.sessions.set(room.roomId, session);
+    this.scheduleAutomation(session);
     console.log(
       `[private_room_game] create roomId=${room.roomId} code=${room.code} players=${room.seats.length} turn=${session.state.currentTurnPlayerId}`,
     );
     return session;
+  }
+
+  private syncAutomation(session: PrivateRoomGameSession): void {
+    advanceAutomatedTurns(session.state);
+    this.scheduleAutomation(session);
+  }
+
+  private scheduleAutomation(session: PrivateRoomGameSession): void {
+    clearTimeout(session.automationTimer);
+    session.automationTimer = undefined;
+
+    if (
+      session.state.phase !== "playing" ||
+      session.state.currentTurnDeadlineAt == null
+    ) {
+      return;
+    }
+
+    const delay = Math.max(
+      0,
+      session.state.currentTurnDeadlineAt - Date.now(),
+    );
+    session.automationTimer = setTimeout(() => {
+      const currentSession = this.sessions.get(session.roomId);
+      if (currentSession == null) {
+        return;
+      }
+      this.syncAutomation(currentSession);
+    }, delay);
   }
 
   private assertRoomReady(room: PrivateRoomSnapshot): void {

@@ -28,6 +28,11 @@ class GameApi {
     return _decodeState(response);
   }
 
+  Future<PublicGameStateModel> getGameState() async {
+    final response = await _client.get(_uri('/game'), headers: _headers);
+    return _decodeState(response);
+  }
+
   Future<PublicGameStateModel> getPrivateRoomGameState({
     required String code,
     required String playerId,

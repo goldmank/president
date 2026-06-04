@@ -188,7 +188,7 @@ export function buildMockExchangeData(baseState?: PublicGameState | null): Excha
   const mockState: PublicGameState = {
     id: "mock-exchange",
     phase: "playing",
-    rules: baseState?.rules ?? { minPlayers: 3, maxPlayers: 8, clearOnTwo: false },
+    rules: baseState?.rules ?? { minPlayers: 3, maxPlayers: 8, doubleDeck: false },
     players: orderedPlayers,
     viewerPlayerId: viewerId,
     viewerHand: baseState?.viewerHand.length ? baseState.viewerHand : fallbackHand(),
@@ -196,7 +196,8 @@ export function buildMockExchangeData(baseState?: PublicGameState | null): Excha
     lastSuccessfulPlayerId: null,
     pile: { currentSet: null, history: [] },
     requirementText: "New Round",
-    log: []
+    log: [],
+    completedRounds: 1
   };
 
     return {

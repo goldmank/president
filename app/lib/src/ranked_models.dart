@@ -1,3 +1,118 @@
+enum LeaderboardWindowRange { allTime, weekly, daily }
+
+extension LeaderboardWindowRangeApi on LeaderboardWindowRange {
+  String get apiValue => switch (this) {
+    LeaderboardWindowRange.allTime => 'all_time',
+    LeaderboardWindowRange.weekly => 'weekly',
+    LeaderboardWindowRange.daily => 'daily',
+  };
+
+  String get label => switch (this) {
+    LeaderboardWindowRange.allTime => 'All Time',
+    LeaderboardWindowRange.weekly => 'Weekly',
+    LeaderboardWindowRange.daily => 'Daily',
+  };
+}
+
+LeaderboardWindowRange leaderboardWindowRangeFromJson(String value) {
+  return switch (value) {
+    'all_time' => LeaderboardWindowRange.allTime,
+    'weekly' => LeaderboardWindowRange.weekly,
+    'daily' => LeaderboardWindowRange.daily,
+    _ => LeaderboardWindowRange.allTime,
+  };
+}
+
+class LeaderboardEntryModel {
+  const LeaderboardEntryModel({
+    required this.userId,
+    required this.displayName,
+    this.photoUrl,
+    required this.score,
+    required this.gamesPlayed,
+    required this.position,
+  });
+
+  final String userId;
+  final String displayName;
+  final String? photoUrl;
+  final int score;
+  final int gamesPlayed;
+  final int position;
+
+  factory LeaderboardEntryModel.fromJson(Map<String, dynamic> json) {
+    return LeaderboardEntryModel(
+      userId: json['userId'] as String,
+      displayName: json['displayName'] as String,
+      photoUrl: json['photoUrl'] as String?,
+      score: (json['score'] as num).toInt(),
+      gamesPlayed: (json['gamesPlayed'] as num?)?.toInt() ?? 0,
+      position: (json['position'] as num).toInt(),
+    );
+  }
+}
+
+class LeaderboardStandingModel extends LeaderboardEntryModel {
+  const LeaderboardStandingModel({
+    required super.userId,
+    required super.displayName,
+    super.photoUrl,
+    required super.score,
+    required super.gamesPlayed,
+    required super.position,
+    required this.inTopResults,
+  });
+
+  final bool inTopResults;
+
+  factory LeaderboardStandingModel.fromJson(Map<String, dynamic> json) {
+    return LeaderboardStandingModel(
+      userId: json['userId'] as String,
+      displayName: json['displayName'] as String,
+      photoUrl: json['photoUrl'] as String?,
+      score: (json['score'] as num).toInt(),
+      gamesPlayed: (json['gamesPlayed'] as num?)?.toInt() ?? 0,
+      position: (json['position'] as num).toInt(),
+      inTopResults: json['inTopResults'] as bool? ?? false,
+    );
+  }
+}
+
+class LeaderboardSnapshotModel {
+  const LeaderboardSnapshotModel({
+    required this.window,
+    required this.limit,
+    required this.generatedAt,
+    required this.entries,
+    required this.viewerEntry,
+  });
+
+  final LeaderboardWindowRange window;
+  final int limit;
+  final int generatedAt;
+  final List<LeaderboardEntryModel> entries;
+  final LeaderboardStandingModel? viewerEntry;
+
+  factory LeaderboardSnapshotModel.fromJson(Map<String, dynamic> json) {
+    return LeaderboardSnapshotModel(
+      window: leaderboardWindowRangeFromJson(json['window'] as String),
+      limit: (json['limit'] as num).toInt(),
+      generatedAt: (json['generatedAt'] as num).toInt(),
+      entries: (json['entries'] as List<dynamic>)
+          .map(
+            (entry) =>
+                LeaderboardEntryModel.fromJson(entry as Map<String, dynamic>),
+          )
+          .toList(),
+      viewerEntry: json['viewerEntry'] == null
+          ? null
+          : LeaderboardStandingModel.fromJson(
+              json['viewerEntry'] as Map<String, dynamic>,
+            ),
+    );
+  }
+}
+
 class RankedQueueTicketModel {
   const RankedQueueTicketModel({
     required this.ticketId,

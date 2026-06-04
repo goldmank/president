@@ -22,6 +22,8 @@ import { now, shuffle, sortHand } from "./random.js";
 
 const botColors = ["#f97316", "#22c55e", "#a855f7", "#06b6d4", "#ef4444", "#f59e0b"];
 const humanColors = ["#3b82f6", "#ec4899", "#14b8a6", "#f59e0b", "#8b5cf6", "#ef4444"];
+const HUMAN_TURN_TIMEOUT_MS = 30_000;
+const BOT_TURN_DELAY_MS = 1_200;
 
 export interface MoveOption {
   cardIds: string[];
@@ -138,6 +140,24 @@ function getPlayer(state: GameState, playerId: string): PlayerState {
   return player;
 }
 
+function currentTurnDurationMs(state: GameState): number {
+  return getPlayer(state, state.currentTurnPlayerId).kind === "bot"
+    ? BOT_TURN_DELAY_MS
+    : HUMAN_TURN_TIMEOUT_MS;
+}
+
+function armCurrentTurn(state: GameState): void {
+  const startedAt = now();
+  state.currentTurnStartedAt = startedAt;
+  state.currentTurnDeadlineAt =
+    state.phase === "playing" ? startedAt + currentTurnDurationMs(state) : null;
+}
+
+function assignCurrentTurn(state: GameState, playerId: string): void {
+  state.currentTurnPlayerId = playerId;
+  armCurrentTurn(state);
+}
+
 function roleForFinishingPosition(
   finishingPosition: number | undefined,
   playerCount: number
@@ -199,7 +219,7 @@ function startNewRound(state: GameState, leaderId: string): void {
       player.status = "active";
     }
   });
-  state.currentTurnPlayerId = leaderId;
+  assignCurrentTurn(state, leaderId);
   state.roundActionCount = 0;
   state.roundExpectedActions = getActivePlayers(state).length;
   addLog(state, `Round cleared. ${getPlayer(state, leaderId).name} leads next`);
@@ -236,7 +256,9 @@ function finalizeIfNeeded(state: GameState): void {
     }
 
     state.phase = "finished";
+    state.completedRounds += 1;
     state.currentTurnPlayerId = activePlayers[0]?.id ?? state.players[0].id;
+    state.currentTurnDeadlineAt = null;
   }
 }
 
@@ -254,6 +276,22 @@ function buildPlayedSet(player: PlayerState, cards: Card[]): PlayedSet {
     byPlayerName: player.name,
     timestamp: now()
   };
+}
+
+function isAllJokers(cards: Card[]): boolean {
+  return cards.length > 0 && cards.every((card) => card.rank === 16);
+}
+
+function jokerCountNeededForSet(setCount: number): number {
+  return setCount >= 3 ? 2 : 1;
+}
+
+function isValidJokerOverride(cards: Card[], currentSet: PlayedSet | null): boolean {
+  return (
+    currentSet != null &&
+    isAllJokers(cards) &&
+    cards.length === jokerCountNeededForSet(currentSet.count)
+  );
 }
 
 function groupPlayableSets(hand: Card[]): MoveOption[] {
@@ -333,6 +371,8 @@ export function createGame(options: CreateGameOptions = {}): GameState {
     rules,
     players,
     currentTurnPlayerId: findStartingPlayerId(players),
+    currentTurnStartedAt: createdAt,
+    currentTurnDeadlineAt: null,
     lastSuccessfulPlayerId: null,
     roundActionCount: 0,
     roundExpectedActions: players.length,
@@ -341,10 +381,12 @@ export function createGame(options: CreateGameOptions = {}): GameState {
       history: []
     },
     log: [],
+    completedRounds: 0,
     createdAt,
     updatedAt: createdAt
   };
 
+  armCurrentTurn(state);
   addLog(state, `Round started. ${getPlayer(state, state.currentTurnPlayerId).name} leads first`);
   return state;
 }
@@ -509,7 +551,7 @@ export function startNextRoundFromResults(state: GameState): GameState {
   state.pile.history = [];
   state.roundActionCount = 0;
   state.roundExpectedActions = state.players.length;
-  state.currentTurnPlayerId = findStartingPlayerId(state.players);
+  assignCurrentTurn(state, findStartingPlayerId(state.players));
   state.pendingNextRoundPlayers = undefined;
   state.pendingExchangePreviews = undefined;
   state.updatedAt = now();
@@ -542,10 +584,13 @@ export function getPublicState(state: GameState, viewerPlayerId: string): Public
     viewerPlayerId: viewer.id,
     viewerHand: sortHand(viewer.hand),
     currentTurnPlayerId: state.currentTurnPlayerId,
+    currentTurnStartedAt: state.currentTurnStartedAt,
+    currentTurnDeadlineAt: state.currentTurnDeadlineAt,
     lastSuccessfulPlayerId: state.lastSuccessfulPlayerId,
     pile: state.pile,
     requirementText: requirementText(state),
-    log: state.log
+    log: state.log,
+    completedRounds: state.completedRounds,
   };
 }
 
@@ -580,6 +625,18 @@ export function validateMove(state: GameState, playerId: string, cardIds: string
 
   if (!currentSet) {
     return { valid: true };
+  }
+
+  if (isAllJokers(cards)) {
+    return isValidJokerOverride(cards, currentSet)
+      ? { valid: true }
+      : {
+          valid: false,
+          reason:
+            currentSet.count >= 3
+              ? "Use exactly 2 jokers to beat triples or four-card groups"
+              : "Use exactly 1 joker to beat singles or pairs",
+        };
   }
 
   if (cards.length !== currentSet.count) {
@@ -622,7 +679,7 @@ function applyPlay(state: GameState, playerId: string, cardIds: string[]): void 
     return;
   }
 
-  state.currentTurnPlayerId = getNextActivePlayerId(state, player.id);
+  assignCurrentTurn(state, getNextActivePlayerId(state, player.id));
 }
 
 function applyPass(state: GameState, playerId: string): void {
@@ -631,7 +688,7 @@ function applyPass(state: GameState, playerId: string): void {
     addLog(state, `${player.name} passed`);
     state.roundActionCount += 1;
     if (!completeRoundIfNeeded(state, player.id)) {
-      state.currentTurnPlayerId = getNextActivePlayerId(state, player.id);
+      assignCurrentTurn(state, getNextActivePlayerId(state, player.id));
       state.updatedAt = now();
     }
     return;
@@ -644,7 +701,7 @@ function applyPass(state: GameState, playerId: string): void {
     return;
   }
 
-  state.currentTurnPlayerId = getNextActivePlayerId(state, player.id);
+  assignCurrentTurn(state, getNextActivePlayerId(state, player.id));
   state.updatedAt = now();
 }
 
@@ -656,6 +713,10 @@ export function listValidMoves(state: GameState, playerId: string): MoveOption[]
   return candidates.filter((move) => {
     if (!currentSet) {
       return true;
+    }
+
+    if (move.rank === 16) {
+      return move.count === jokerCountNeededForSet(currentSet.count);
     }
 
     return move.count === currentSet.count && move.rank > currentSet.rank;
@@ -758,6 +819,30 @@ export function runBotsUntilHumanTurn(state: GameState): GameState {
     }
 
     executeBotTurn(state);
+    safety -= 1;
+  }
+
+  return state;
+}
+
+export function advanceAutomatedTurns(state: GameState, maxSteps = 16): GameState {
+  let safety = maxSteps;
+
+  while (
+    state.phase === "playing" &&
+    state.currentTurnDeadlineAt != null &&
+    now() >= state.currentTurnDeadlineAt &&
+    safety > 0
+  ) {
+    const current = getPlayer(state, state.currentTurnPlayerId);
+    if (current.kind === "bot") {
+      executeBotTurn(state);
+    } else {
+      submitAction(state, {
+        type: "pass",
+        playerId: current.id
+      });
+    }
     safety -= 1;
   }
 

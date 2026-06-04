@@ -139,10 +139,13 @@ class PublicGameStateModel {
     required this.viewerPlayerId,
     required this.viewerHand,
     required this.currentTurnPlayerId,
+    this.currentTurnStartedAt,
+    this.currentTurnDeadlineAt,
     required this.lastSuccessfulPlayerId,
     required this.pile,
     required this.requirementText,
     required this.log,
+    required this.completedRounds,
   });
 
   final String id;
@@ -151,10 +154,13 @@ class PublicGameStateModel {
   final String viewerPlayerId;
   final List<CardModel> viewerHand;
   final String currentTurnPlayerId;
+  final int? currentTurnStartedAt;
+  final int? currentTurnDeadlineAt;
   final String? lastSuccessfulPlayerId;
   final PileState pile;
   final String requirementText;
   final List<LogEntryModel> log;
+  final int completedRounds;
 
   factory PublicGameStateModel.fromJson(Map<String, dynamic> json) {
     return PublicGameStateModel(
@@ -171,12 +177,15 @@ class PublicGameStateModel {
           .map((entry) => CardModel.fromJson(entry as Map<String, dynamic>))
           .toList(),
       currentTurnPlayerId: json['currentTurnPlayerId'] as String,
+      currentTurnStartedAt: (json['currentTurnStartedAt'] as num?)?.toInt(),
+      currentTurnDeadlineAt: (json['currentTurnDeadlineAt'] as num?)?.toInt(),
       lastSuccessfulPlayerId: json['lastSuccessfulPlayerId'] as String?,
       pile: PileState.fromJson(json['pile'] as Map<String, dynamic>),
       requirementText: json['requirementText'] as String,
       log: (json['log'] as List<dynamic>)
           .map((entry) => LogEntryModel.fromJson(entry as Map<String, dynamic>))
           .toList(),
+      completedRounds: (json['completedRounds'] as num?)?.toInt() ?? 0,
     );
   }
 

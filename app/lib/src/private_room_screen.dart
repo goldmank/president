@@ -16,12 +16,10 @@ class PrivateRoomScreen extends StatefulWidget {
   const PrivateRoomScreen({
     super.key,
     required this.initialRoom,
-    required this.isHost,
     required this.currentUserId,
   });
 
   final PrivateRoomSnapshotModel initialRoom;
-  final bool isHost;
   final String currentUserId;
 
   @override
@@ -99,7 +97,7 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
     if (room == null) {
       return;
     }
-    _log('poll.start code=${room.code} isHost=${widget.isHost}');
+    _log('poll.start code=${room.code} isHost=${_isCurrentUserHost(room)}');
     _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       unawaited(_refreshRoom(room.code));
     });
@@ -231,12 +229,14 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
   @override
   Widget build(BuildContext context) {
     final room = _room;
+    final isCurrentUserHost = _isCurrentUserHost(room);
     final seatCount = room?.seats.length ?? 0;
     final botCount = room?.seats.where((seat) => seat.isBot).length ?? 0;
     final humanCount = seatCount - botCount;
 
     return Scaffold(
       backgroundColor: presidentBackground,
+      resizeToAvoidBottomInset: false,
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -259,7 +259,7 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
               ),
               const SizedBox(height: 10),
               Text(
-                widget.isHost
+                isCurrentUserHost
                     ? 'Share the room code, then start when the table looks right. If fewer than 4 players have joined, bots will fill the empty seats.'
                     : 'You joined a private room. The host decides when to start, and bots will fill any empty seats needed to reach 4 players.',
                 style: const TextStyle(
@@ -363,7 +363,7 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
                         Text(
                           room.status == 'ready'
                               ? 'Table Ready'
-                              : (widget.isHost
+                              : (isCurrentUserHost
                                     ? 'Waiting For Players'
                                     : 'Waiting For Host'),
                           style: const TextStyle(
@@ -440,7 +440,7 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
                     ? null
                     : room.status == 'ready'
                     ? _enterMatch
-                    : (widget.isHost ? _startMatch : null),
+                    : (isCurrentUserHost ? _startMatch : null),
                 style: FilledButton.styleFrom(
                   backgroundColor: room.status == 'ready'
                       ? presidentPrimary
@@ -458,7 +458,9 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
                       ? (room.status == 'ready' ? 'OPENING...' : 'STARTING...')
                       : room.status == 'ready'
                       ? 'ENTER MATCH'
-                      : (widget.isHost ? 'START MATCH' : 'WAITING FOR HOST'),
+                      : (isCurrentUserHost
+                            ? 'START MATCH'
+                            : 'WAITING FOR HOST'),
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,
                     letterSpacing: 1.2,
@@ -471,6 +473,10 @@ class _PrivateRoomScreenState extends State<PrivateRoomScreen> {
 
   void _log(String message) {
     debugPrint('[private_room_screen] $message');
+  }
+
+  bool _isCurrentUserHost(PrivateRoomSnapshotModel? room) {
+    return room != null && room.hostUserId == widget.currentUserId;
   }
 }
 

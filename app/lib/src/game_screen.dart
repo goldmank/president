@@ -58,6 +58,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   Timer? _bannerTimer;
   Timer? _botTimer;
   Timer? _multiplayerPollTimer;
+  Timer? _turnCountdownTimer;
+  int _turnClockMs = DateTime.now().millisecondsSinceEpoch;
+  bool _autoPassInFlight = false;
   _LayoutSnapshot? _layout;
 
   bool get _isPrivateRoomMatch =>
@@ -81,6 +84,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     _bannerTimer?.cancel();
     _botTimer?.cancel();
     _multiplayerPollTimer?.cancel();
+    _turnCountdownTimer?.cancel();
     for (final timer in _passBubbleTimers.values) {
       timer.cancel();
     }
@@ -125,9 +129,57 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
+  void _syncTurnCountdown() {
+    _turnCountdownTimer?.cancel();
+    final state = _state;
+    final deadlineAt = state?.currentTurnDeadlineAt;
+    final shouldRun =
+        state != null &&
+        state.phase == GamePhase.playing &&
+        state.currentTurnPlayerId == state.viewerPlayerId &&
+        deadlineAt != null &&
+        !_hasBlockingOverlay &&
+        !_autoPassInFlight;
+
+    if (!shouldRun) {
+      if (mounted) {
+        setState(() {
+          _turnClockMs = DateTime.now().millisecondsSinceEpoch;
+        });
+      } else {
+        _turnClockMs = DateTime.now().millisecondsSinceEpoch;
+      }
+      return;
+    }
+
+    void tick() {
+      if (!mounted) {
+        return;
+      }
+      final nowMs = DateTime.now().millisecondsSinceEpoch;
+      setState(() {
+        _turnClockMs = nowMs;
+      });
+      if (nowMs >= deadlineAt) {
+        _turnCountdownTimer?.cancel();
+        unawaited(_handleTurnDeadlineReached());
+      }
+    }
+
+    tick();
+    _turnCountdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      tick();
+    });
+  }
+
   void _startMultiplayerPolling() {
     _multiplayerPollTimer?.cancel();
     _multiplayerPollTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          _turnClockMs = DateTime.now().millisecondsSinceEpoch;
+        });
+      }
       unawaited(_refreshPrivateRoomGameState());
     });
   }
@@ -149,6 +201,12 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       if (previous != null &&
           _stateSignature(previous) == _stateSignature(next)) {
         return;
+      }
+      if (previous != null) {
+        await _replayPrivateRoomActions(previous, next);
+        if (!mounted) {
+          return;
+        }
       }
       await _setGameState(next);
     } catch (error) {
@@ -188,6 +246,8 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       state.phase.name,
       state.viewerPlayerId,
       state.currentTurnPlayerId,
+      state.currentTurnStartedAt ?? '-',
+      state.currentTurnDeadlineAt ?? '-',
       state.lastSuccessfulPlayerId ?? '-',
       players,
       hand,
@@ -198,9 +258,109 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     ].join('~');
   }
 
+  Future<void> _replayPrivateRoomActions(
+    PublicGameStateModel previous,
+    PublicGameStateModel next,
+  ) async {
+    var isFirstSetOnTable =
+        previous.pile.history.isEmpty || _didRoundClearBetween(previous, next);
+    for (final playedSet in _extractNewPlayedSets(previous, next)) {
+      if (!mounted) {
+        return;
+      }
+      if (playedSet.byPlayerId == next.viewerPlayerId) {
+        isFirstSetOnTable = false;
+        continue;
+      }
+      await _animateSeatPlay(
+        previous,
+        playedSet.byPlayerId,
+        playedSet.cards,
+        isFirstSetOnTable: isFirstSetOnTable,
+      );
+      isFirstSetOnTable = false;
+    }
+  }
+
+  List<PlayedSet> _extractNewPlayedSets(
+    PublicGameStateModel previous,
+    PublicGameStateModel next,
+  ) {
+    final seenTimestamps = <int>{
+      if (previous.pile.currentSet != null) previous.pile.currentSet!.timestamp,
+      ...previous.pile.history.map((entry) => entry.timestamp),
+    };
+    final newEntries =
+        next.pile.history
+            .where((entry) => !seenTimestamps.contains(entry.timestamp))
+            .toList()
+          ..sort((left, right) => left.timestamp.compareTo(right.timestamp));
+    if (newEntries.isNotEmpty) {
+      return newEntries;
+    }
+    final currentSet = next.pile.currentSet;
+    if (currentSet != null && !seenTimestamps.contains(currentSet.timestamp)) {
+      return <PlayedSet>[currentSet];
+    }
+    return const <PlayedSet>[];
+  }
+
+  bool _didRoundClearBetween(
+    PublicGameStateModel previous,
+    PublicGameStateModel next,
+  ) {
+    if (previous.pile.history.isEmpty) {
+      return false;
+    }
+    final previousLogIds = previous.log.map((entry) => entry.id).toSet();
+    return next.log.any(
+      (entry) =>
+          !previousLogIds.contains(entry.id) &&
+          entry.text.startsWith('Round cleared.'),
+    );
+  }
+
+  Set<String> _collectPassBubblePlayerIds(
+    PublicGameStateModel previous,
+    PublicGameStateModel next,
+  ) {
+    final playerIds = <String>{};
+    for (final player in next.players) {
+      if (player.id == next.viewerPlayerId) {
+        continue;
+      }
+      final before = previous.players.firstWhere(
+        (entry) => entry.id == player.id,
+        orElse: () => player,
+      );
+      if (before.status != PlayerStatus.passed &&
+          player.status == PlayerStatus.passed) {
+        playerIds.add(player.id);
+      }
+    }
+
+    final previousLogIds = previous.log.map((entry) => entry.id).toSet();
+    for (final entry in next.log) {
+      if (previousLogIds.contains(entry.id)) {
+        continue;
+      }
+      for (final player in next.players) {
+        if (player.id == next.viewerPlayerId) {
+          continue;
+        }
+        if (entry.text == '${player.name} passed') {
+          playerIds.add(player.id);
+          break;
+        }
+      }
+    }
+    return playerIds;
+  }
+
   Future<void> _loadGame({int? playerCount}) async {
     _bannerTimer?.cancel();
     _botTimer?.cancel();
+    _turnCountdownTimer?.cancel();
     setState(() {
       _loading = true;
       _busy = false;
@@ -241,6 +401,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         _state = state;
         _loading = false;
       });
+      _syncTurnCountdown();
       if (state.viewerHand.isNotEmpty) {
         _lastKnownViewerHand = List<CardModel>.from(state.viewerHand);
       }
@@ -340,20 +501,55 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     return text.startsWith('Exception: ') ? text.substring(11) : text;
   }
 
+  bool _isTurnMismatchError(Object error) {
+    return _formatError(error).toLowerCase().contains('not your turn');
+  }
+
   void _reportError(String context, Object error, StackTrace stackTrace) {
     debugPrint('[$context] ${_formatError(error)}');
     debugPrintStack(stackTrace: stackTrace);
     unawaited(_analytics.logGameError(context, error, state: _state));
   }
 
+  void _resetInteractionState() {
+    _busy = false;
+    _selectedCardIds.clear();
+    _animatingViewerCardIds.clear();
+    _clearFlights();
+  }
+
+  Future<void> _resyncTurnState() async {
+    try {
+      final next = _isPrivateRoomMatch
+          ? await _api.getPrivateRoomGameState(
+              code: _privateRoomCode,
+              playerId: _privateRoomPlayerId,
+            )
+          : await _api.getGameState();
+      if (!mounted) {
+        return;
+      }
+      await _setGameState(next);
+    } catch (refreshError, refreshStackTrace) {
+      _reportError('turn_resync', refreshError, refreshStackTrace);
+      if (!mounted) {
+        return;
+      }
+      _showBanner(_formatError(refreshError));
+    }
+  }
+
   Future<void> _setGameState(PublicGameStateModel next) async {
     final previous = _state;
+    final passBubblePlayerIds = previous == null
+        ? const <String>{}
+        : _collectPassBubblePlayerIds(previous, next);
     final shouldHoldRoundEnd =
         previous != null &&
         previous.phase == GamePhase.playing &&
         previous.pile.history.isNotEmpty &&
         next.phase == GamePhase.playing &&
-        next.pile.history.isEmpty;
+        (next.pile.history.isEmpty || _didRoundClearBetween(previous, next));
 
     if (shouldHoldRoundEnd) {
       await Future<void>.delayed(const Duration(seconds: 1));
@@ -397,32 +593,24 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     for (final flight in lingeringFlights) {
       flight.controller.dispose();
     }
-    if (previous != null) {
-      for (final player in next.players) {
-        if (player.id == next.viewerPlayerId) {
-          continue;
-        }
-        final before = previous.players.firstWhere(
-          (entry) => entry.id == player.id,
-          orElse: () => player,
-        );
-        if (before.status != PlayerStatus.passed &&
-            player.status == PlayerStatus.passed) {
-          _showPassBubble(player.id);
-        }
-      }
+    for (final playerId in passBubblePlayerIds) {
+      _showPassBubble(playerId);
     }
     if (previous != null &&
         previous.phase != GamePhase.finished &&
         next.phase == GamePhase.finished) {
       final role = awardedRoleLabel(next.viewer, next.players.length);
-      if (_recordedFinishedGameId != next.id) {
-        _recordedFinishedGameId = next.id;
-        unawaited(UserProgressService.instance.recordFinishedGame(role));
+      final resultId = '${next.id}:${next.completedRounds}';
+      if (_recordedFinishedGameId != resultId) {
+        _recordedFinishedGameId = resultId;
+        unawaited(
+          UserProgressService.instance.recordFinishedGame(role, resultId),
+        );
       }
       unawaited(_analytics.logGameFinished(previous, next));
       unawaited(_analytics.logRoleProgressionReady(previous, next));
     }
+    _syncTurnCountdown();
     _scheduleBotTurnIfNeeded();
   }
 
@@ -515,6 +703,33 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       _showMockResultsOverlay ||
       _showMockExchangeOverlay;
 
+  int? get _viewerTurnSecondsRemaining {
+    final state = _state;
+    final deadlineAt = state?.currentTurnDeadlineAt;
+    if (!_isViewerTurn || deadlineAt == null) {
+      return null;
+    }
+    final remainingMs = deadlineAt - _turnClockMs;
+    if (remainingMs <= 0) {
+      return 0;
+    }
+    return (remainingMs / 1000).ceil();
+  }
+
+  bool _areAllJokers(List<CardModel> cards) {
+    return cards.isNotEmpty && cards.every((card) => card.rank == 16);
+  }
+
+  int _jokerCountNeededForSet(int setCount) {
+    return setCount >= 3 ? 2 : 1;
+  }
+
+  bool _isValidJokerOverride(List<CardModel> cards, PlayedSet? currentSet) {
+    return currentSet != null &&
+        _areAllJokers(cards) &&
+        cards.length == _jokerCountNeededForSet(currentSet.count);
+  }
+
   Set<String> _selectableCardIds(PublicGameStateModel state) {
     if (!_isViewerTurn) {
       return <String>{};
@@ -531,15 +746,30 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       return state.viewerHand.map((card) => card.id).toSet();
     }
 
+    final currentSet = state.pile.currentSet;
     final rank = selectedCards.first.rank;
-    final maxCount = state.pile.currentSet?.count ?? 4;
+    final maxCount = currentSet?.count ?? 4;
     final ids = selectedCards.map((card) => card.id).toSet();
+    final allJokers = _areAllJokers(selectedCards);
+
+    if (allJokers && currentSet != null) {
+      final requiredJokers = _jokerCountNeededForSet(currentSet.count);
+      if (selectedCards.length >= requiredJokers) {
+        return ids;
+      }
+      for (final card in state.viewerHand) {
+        if (!_selectedCardIds.contains(card.id) && card.rank == 16) {
+          ids.add(card.id);
+        }
+      }
+      return ids;
+    }
 
     if (_selectedCardIds.length >= maxCount) {
       return ids;
     }
 
-    if (state.pile.currentSet != null && rank <= state.pile.currentSet!.rank) {
+    if (currentSet != null && rank <= currentSet.rank) {
       return ids;
     }
 
@@ -572,6 +802,10 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final currentSet = state.pile.currentSet;
     if (currentSet == null) {
       return true;
+    }
+
+    if (_areAllJokers(selectedCards)) {
+      return _isValidJokerOverride(selectedCards, currentSet);
     }
 
     if (selectedCards.length != currentSet.count) {
@@ -634,12 +868,72 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _busy = false;
-        _animatingViewerCardIds.clear();
-        _clearFlights();
-      });
+      setState(_resetInteractionState);
+      if (_isTurnMismatchError(error)) {
+        await _resyncTurnState();
+        return;
+      }
       _showBanner(_formatError(error));
+    }
+  }
+
+  Future<void> _handleTurnDeadlineReached() async {
+    final state = _state;
+    if (state == null || !_isViewerTurn || _busy || _autoPassInFlight) {
+      return;
+    }
+
+    _autoPassInFlight = true;
+    try {
+      await _submitForcedPass(state.viewerPlayerId);
+    } catch (error) {
+      if (_isTurnMismatchError(error)) {
+        await _resyncTurnState();
+      } else if (_isPrivateRoomMatch) {
+        await _refreshPrivateRoomGameState();
+      } else {
+        if (mounted) {
+          _showBanner(_formatError(error));
+        }
+      }
+    } finally {
+      _autoPassInFlight = false;
+      if (mounted) {
+        _syncTurnCountdown();
+      }
+    }
+  }
+
+  Future<void> _submitForcedPass(String playerId) async {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _busy = true;
+      _selectedCardIds.clear();
+    });
+
+    try {
+      final next = _isPrivateRoomMatch
+          ? await _api.submitPrivateRoomPass(
+              code: _privateRoomCode,
+              payload: PassActionPayload(playerId: playerId),
+            )
+          : await _api.submitPass(PassActionPayload(playerId: playerId));
+
+      if (!mounted) {
+        return;
+      }
+
+      await _setGameState(next);
+    } catch (error, stackTrace) {
+      _reportError('auto_pass', error, stackTrace);
+      if (!mounted) {
+        return;
+      }
+      setState(_resetInteractionState);
+      rethrow;
     }
   }
 
@@ -740,8 +1034,9 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   Future<void> _animateSeatPlay(
     PublicGameStateModel state,
     String playerId,
-    List<CardModel> cards,
-  ) async {
+    List<CardModel> cards, {
+    bool? isFirstSetOnTable,
+  }) async {
     final layout = _layout;
     if (layout == null || cards.isEmpty) {
       return;
@@ -771,17 +1066,17 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       math.sin(seatAngle + math.pi),
     );
 
+    final centerFirstSet = isFirstSetOnTable ?? state.pile.history.isEmpty;
     final flights = <_FlightSpec>[];
     for (var index = 0; index < cards.length; index++) {
       final spread = (index - (cards.length - 1) / 2) * 16;
       final start =
           seatCenter + inward * 48 + Offset(spread, math.sin(seatAngle) * 4);
-      final isFirstSetOnTable = state.pile.history.isEmpty;
       final end = _pileRenderedCardCenter(
         layout,
         cards,
         index,
-        centerFirstSet: isFirstSetOnTable,
+        centerFirstSet: centerFirstSet,
       );
       flights.add(
         _FlightSpec(
@@ -789,11 +1084,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           start: start,
           end: end,
           startAngle: seatAngle + math.pi / 2,
-          endAngle: _pileCardAngle(
-            cards[index],
-            index,
-            tight: isFirstSetOnTable,
-          ),
+          endAngle: _pileCardAngle(cards[index], index, tight: centerFirstSet),
           startScale: 0.76,
           endScale: 1.12,
         ),
@@ -1269,6 +1560,7 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         ? _isViewerTurn
         : _isSelectedPlayValid(state);
     final selectableIds = _selectableCardIds(state);
+    final viewerTurnSecondsRemaining = _viewerTurnSecondsRemaining;
 
     return Stack(
       clipBehavior: Clip.none,
@@ -1343,11 +1635,23 @@ class _GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           left: buttonCenter.dx - (100 * layout.uiScale),
           top: buttonCenter.dy + 2,
           width: 200 * layout.uiScale,
-          child: _PrimaryActionButton(
-            enabled: buttonEnabled,
-            label: _selectedCardIds.isEmpty ? 'PASS' : 'PLAY HAND',
-            scale: layout.uiScale,
-            onPressed: buttonEnabled ? _submitAction : null,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              _PrimaryActionButton(
+                enabled: buttonEnabled,
+                label: _selectedCardIds.isEmpty ? 'PASS' : 'PLAY HAND',
+                scale: layout.uiScale,
+                onPressed: buttonEnabled ? _submitAction : null,
+              ),
+              if (viewerTurnSecondsRemaining != null) ...<Widget>[
+                SizedBox(height: 4 * layout.uiScale),
+                _TurnCountdownBadge(
+                  secondsRemaining: viewerTurnSecondsRemaining,
+                  scale: layout.uiScale,
+                ),
+              ],
+            ],
           ),
         ),
         _buildViewerHand(context, state, layout, selectableIds),
@@ -2083,6 +2387,31 @@ class _PrimaryActionButton extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _TurnCountdownBadge extends StatelessWidget {
+  const _TurnCountdownBadge({
+    required this.secondsRemaining,
+    required this.scale,
+  });
+
+  final int secondsRemaining;
+  final double scale;
+
+  @override
+  Widget build(BuildContext context) {
+    final urgent = secondsRemaining <= 10;
+    return Text(
+      'AUTO PASS IN ${secondsRemaining}s',
+      textAlign: TextAlign.center,
+      style: TextStyle(
+        color: urgent ? presidentDanger : presidentText,
+        fontSize: 11 * scale,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.8,
       ),
     );
   }

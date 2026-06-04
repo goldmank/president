@@ -48,11 +48,14 @@ export interface GameState {
   pendingNextRoundPlayers?: PlayerState[];
   pendingExchangePreviews?: Record<string, ExchangePreview>;
   currentTurnPlayerId: string;
+  currentTurnStartedAt: number;
+  currentTurnDeadlineAt: number | null;
   lastSuccessfulPlayerId: string | null;
   roundActionCount: number;
   roundExpectedActions: number;
   pile: PileState;
   log: LogEntry[];
+  completedRounds: number;
   createdAt: number;
   updatedAt: number;
 }
@@ -73,10 +76,13 @@ export interface PublicGameState {
   viewerPlayerId: string;
   viewerHand: Card[];
   currentTurnPlayerId: string;
+  currentTurnStartedAt?: number;
+  currentTurnDeadlineAt?: number | null;
   lastSuccessfulPlayerId: string | null;
   pile: PileState;
   requirementText: string;
   log: LogEntry[];
+  completedRounds: number;
 }
 
 export interface ExchangePreview {

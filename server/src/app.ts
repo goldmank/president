@@ -2,6 +2,7 @@ import express from "express";
 import cors from "cors";
 import { ErrorReportService } from "./error/ErrorReportService.js";
 import { GameManager } from "./game/GameManager.js";
+import { LeaderboardService } from "./leaderboard/LeaderboardService.js";
 import { PrivateRoomGameService } from "./multiplayer/PrivateRoomGameService.js";
 import { PrivateRoomService } from "./multiplayer/PrivateRoomService.js";
 import { RankedMatchmakingService } from "./multiplayer/RankedMatchmakingService.js";
@@ -13,6 +14,7 @@ export function createApp(
   const app = express();
   const games = new GameManager();
   const errorReports = new ErrorReportService();
+  const leaderboard = new LeaderboardService();
   const privateRoomGames = new PrivateRoomGameService();
 
   app.set("trust proxy", true);
@@ -43,6 +45,89 @@ export function createApp(
 
   app.get("/health", (_request, response) => {
     response.json({ ok: true });
+  });
+
+  app.get("/leaderboard", async (request, response) => {
+    const window = parseLeaderboardWindow(request.query.window);
+    if (window == null) {
+      response.status(400).json({ error: "window must be all_time, weekly, or daily" });
+      return;
+    }
+
+    const viewerUserId =
+      typeof request.query.userId === "string" ? request.query.userId.trim() : null;
+    const requestedLimit =
+      typeof request.query.limit === "string" ? Number(request.query.limit) : undefined;
+
+    try {
+      response.json(await leaderboard.getLeaderboard(window, viewerUserId, requestedLimit));
+    } catch (error) {
+      console.error("[leaderboard] get_failed", error);
+      response.status(500).json({ error: "Unable to load leaderboard" });
+    }
+  });
+
+  app.get("/leaderboard/progress/:userId", async (request, response) => {
+    const userId = request.params.userId?.trim();
+    if (typeof userId !== "string" || userId.length === 0) {
+      response.status(400).json({ error: "userId is required" });
+      return;
+    }
+
+    try {
+      response.json(await leaderboard.getUserProgress(userId));
+    } catch (error) {
+      console.error("[leaderboard] progress_failed", error);
+      response.status(500).json({ error: "Unable to load player progress" });
+    }
+  });
+
+  app.post("/leaderboard/report", async (request, response) => {
+    const resultId = request.body?.resultId;
+    const userId = request.body?.userId;
+    const displayName = request.body?.displayName;
+    const role = request.body?.role;
+    const photoUrl = request.body?.photoUrl;
+
+    if (typeof resultId !== "string" || resultId.trim().length === 0) {
+      response.status(400).json({ error: "resultId is required" });
+      return;
+    }
+    if (typeof userId !== "string" || userId.trim().length === 0) {
+      response.status(400).json({ error: "userId is required" });
+      return;
+    }
+    if (typeof displayName !== "string" || displayName.trim().length === 0) {
+      response.status(400).json({ error: "displayName is required" });
+      return;
+    }
+    if (typeof role !== "string" || role.trim().length === 0) {
+      response.status(400).json({ error: "role is required" });
+      return;
+    }
+    if (photoUrl != null && typeof photoUrl !== "string") {
+      response.status(400).json({ error: "photoUrl must be a string" });
+      return;
+    }
+
+    try {
+      response.json(
+        await leaderboard.reportGameResult({
+          resultId: resultId.trim(),
+          userId: userId.trim(),
+          displayName: displayName.trim(),
+          photoUrl: typeof photoUrl === "string" ? photoUrl.trim() : null,
+          role: role.trim(),
+        }),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown error";
+      const status = message.toLowerCase().includes("unsupported role") ? 400 : 500;
+      if (status === 500) {
+        console.error("[leaderboard] report_failed", error);
+      }
+      response.status(status).json({ error: message });
+    }
   });
 
   app.post("/client-error-report", async (request, response) => {
@@ -492,6 +577,17 @@ function optionalString(value: unknown): string | null {
   }
   const trimmed = value.trim();
   return trimmed.length > 0 ? trimmed : null;
+}
+
+function parseLeaderboardWindow(value: unknown) {
+  switch (value) {
+    case "all_time":
+    case "weekly":
+    case "daily":
+      return value;
+    default:
+      return null;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

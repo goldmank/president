@@ -6,6 +6,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'ranked_api.dart';
 import 'user_progress.dart';
 
 class UserProgressService extends ChangeNotifier {
@@ -17,6 +18,7 @@ class UserProgressService extends ChangeNotifier {
 
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final RankedApi _rankedApi = RankedApi();
 
   SharedPreferences? _prefs;
   StreamSubscription<User?>? _authSubscription;
@@ -48,20 +50,42 @@ class UserProgressService extends ChangeNotifier {
     _currentProgress = _currentProgress.copyWith(
       debugScoreBonus: _currentProgress.debugScoreBonus + amount,
     );
-    await _persistCurrent();
+    await _persistCurrentCache();
     notifyListeners();
   }
 
   Future<void> resetDebugScore() async {
     _currentProgress = _currentProgress.copyWith(debugScoreBonus: 0);
-    await _persistCurrent();
+    await _persistCurrentCache();
     notifyListeners();
   }
 
-  Future<void> recordFinishedGame(String role) async {
-    _currentProgress = _currentProgress.recordRole(role);
-    await _persistCurrent();
-    notifyListeners();
+  Future<void> recordFinishedGame(String role, String resultId) async {
+    final user = _auth.currentUser;
+    if (user == null) {
+      _currentProgress = _currentProgress.recordRole(role);
+      await _persistCurrentCache();
+      notifyListeners();
+      return;
+    }
+
+    final displayName = (user.displayName?.trim().isNotEmpty ?? false)
+        ? user.displayName!.trim()
+        : 'Player';
+
+    try {
+      _currentProgress = await _rankedApi.reportFinishedGame(
+        resultId: resultId,
+        userId: user.uid,
+        displayName: displayName,
+        photoUrl: user.photoURL,
+        role: role,
+      );
+      await _persistRegisteredCache(_currentProgress, user);
+      notifyListeners();
+    } catch (error) {
+      debugPrint('[user_progress] report_finished_game_failed $error');
+    }
   }
 
   Future<UserProgress> _loadProgressForCurrentUser() async {
@@ -71,14 +95,11 @@ class UserProgressService extends ChangeNotifier {
     }
 
     try {
-      final snapshot = await _firestore.collection('users').doc(user.uid).get();
-      final data = snapshot.data();
-      if (data == null) {
-        return const UserProgress();
-      }
-      return UserProgress.fromJson(data);
+      final progress = await _rankedApi.getUserProgress(user.uid);
+      await _persistRegisteredCache(progress, user);
+      return progress;
     } catch (_) {
-      return const UserProgress();
+      return _loadRegisteredProgressCache(user.uid);
     }
   }
 
@@ -95,7 +116,20 @@ class UserProgressService extends ChangeNotifier {
     }
   }
 
-  Future<void> _persistCurrent() async {
+  Future<UserProgress> _loadRegisteredProgressCache(String userId) async {
+    try {
+      final snapshot = await _firestore.collection('users').doc(userId).get();
+      final data = snapshot.data();
+      if (data == null) {
+        return const UserProgress();
+      }
+      return UserProgress.fromJson(data);
+    } catch (_) {
+      return const UserProgress();
+    }
+  }
+
+  Future<void> _persistCurrentCache() async {
     final user = _auth.currentUser;
     if (user == null) {
       await _prefs?.setString(
@@ -105,8 +139,12 @@ class UserProgressService extends ChangeNotifier {
       return;
     }
 
+    await _persistRegisteredCache(_currentProgress, user);
+  }
+
+  Future<void> _persistRegisteredCache(UserProgress progress, User user) async {
     await _firestore.collection('users').doc(user.uid).set(<String, dynamic>{
-      ..._currentProgress.toJson(),
+      ...progress.toJson(),
       'updatedAt': FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }

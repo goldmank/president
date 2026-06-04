@@ -13,6 +13,7 @@ import 'private_room_screen.dart';
 import 'president_theme.dart';
 import 'ranked_search_screen.dart';
 import 'ranked_api.dart';
+import 'ranking_tab.dart';
 import 'settings_screen.dart';
 import 'tutorial_screen.dart';
 import 'user_progress.dart';
@@ -128,14 +129,17 @@ class _LobbyScreenState extends State<LobbyScreen> {
                                   },
                                   avatarUrl: avatarUrl,
                                 ),
-                                const SizedBox(height: 18),
-                                _ProfilePanel(
-                                  profileName: profileName,
-                                  progressData: progressData,
-                                  score: score,
-                                  rank: rank,
-                                ),
-                                const SizedBox(height: 18),
+                                if (_selectedTab != 1) ...<Widget>[
+                                  const SizedBox(height: 18),
+                                  _ProfilePanel(
+                                    profileName: profileName,
+                                    progressData: progressData,
+                                    score: score,
+                                    rank: rank,
+                                  ),
+                                  const SizedBox(height: 18),
+                                ] else
+                                  const SizedBox(height: 18),
                                 AnimatedSwitcher(
                                   duration: const Duration(milliseconds: 220),
                                   child: switch (_selectedTab) {
@@ -150,10 +154,10 @@ class _LobbyScreenState extends State<LobbyScreen> {
                                       onFindMatch: _openRankedMatchmaking,
                                       onCreateMatch: _createPrivateMatch,
                                     ),
-                                    1 => _RankingTab(
+                                    1 => RankingTab(
                                       key: const ValueKey<String>('ranking'),
-                                      score: score,
-                                      rank: rank,
+                                      currentUserId: _user?.uid,
+                                      refreshToken: score,
                                     ),
                                     _ => _AchievementsTab(
                                       key: const ValueKey<String>(
@@ -274,6 +278,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
       return;
     }
 
+    FocusScope.of(context).unfocus();
+
     final displayName = (_user!.displayName?.trim().isNotEmpty ?? false)
         ? _user!.displayName!.trim()
         : 'Player';
@@ -304,11 +310,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
       });
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (BuildContext context) => PrivateRoomScreen(
-            initialRoom: room,
-            isHost: room.hostUserId == _user!.uid,
-            currentUserId: _user!.uid,
-          ),
+          builder: (BuildContext context) =>
+              PrivateRoomScreen(initialRoom: room, currentUserId: _user!.uid),
         ),
       );
     } catch (error) {
@@ -392,11 +395,8 @@ class _LobbyScreenState extends State<LobbyScreen> {
       });
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (BuildContext context) => PrivateRoomScreen(
-            initialRoom: room,
-            isHost: true,
-            currentUserId: _user!.uid,
-          ),
+          builder: (BuildContext context) =>
+              PrivateRoomScreen(initialRoom: room, currentUserId: _user!.uid),
         ),
       );
     } catch (error) {
@@ -956,126 +956,6 @@ class _LobbyBusyOverlay extends StatelessWidget {
           ),
         ),
       ),
-    );
-  }
-}
-
-class _RankingTab extends StatelessWidget {
-  const _RankingTab({super.key, required this.score, required this.rank});
-
-  final int score;
-  final _RankProgress rank;
-
-  @override
-  Widget build(BuildContext context) {
-    const pointRows = <({String role, int points, Color color})>[
-      (role: 'President', points: 10, color: presidentPrimary),
-      (role: 'Vice President', points: 8, color: presidentSecondary),
-      (role: 'Citizen', points: 5, color: presidentMuted),
-      (role: 'Vice Scum', points: 2, color: presidentTertiary),
-      (role: 'Scum', points: 1, color: presidentDanger),
-    ];
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        const Text(
-          'Ranking',
-          style: TextStyle(
-            color: presidentText,
-            fontSize: 28,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.8,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          'Your current score is $score. Guest mode does not persist rating yet, but the full progression model is defined below.',
-          style: const TextStyle(
-            color: presidentMuted,
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            height: 1.4,
-          ),
-        ),
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: presidentSurfaceContainer,
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Column(
-            children: <Widget>[
-              for (final row in pointRows) ...<Widget>[
-                Row(
-                  children: <Widget>[
-                    Container(
-                      width: 10,
-                      height: 10,
-                      decoration: BoxDecoration(
-                        color: row.color,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        row.role,
-                        style: const TextStyle(
-                          color: presidentText,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Text(
-                      '${row.points} pts',
-                      style: const TextStyle(
-                        color: presidentPrimary,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
-                ),
-                if (row != pointRows.last) const SizedBox(height: 14),
-              ],
-            ],
-          ),
-        ),
-        const SizedBox(height: 18),
-        Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: presidentSurfaceLow,
-            borderRadius: BorderRadius.circular(22),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                'Current Tier: ${rank.name}',
-                style: const TextStyle(
-                  color: presidentText,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Rank thresholds scale by +5 points each step: 10, 25, 45, 70, 100, and so on.',
-                style: const TextStyle(
-                  color: presidentMuted,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  height: 1.35,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

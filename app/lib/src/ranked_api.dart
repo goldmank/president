@@ -9,6 +9,7 @@ import 'package:web_socket_channel/web_socket_channel.dart';
 import 'app_config.dart';
 import 'app_error.dart';
 import 'ranked_models.dart';
+import 'user_progress.dart';
 
 class RankedApi {
   RankedApi({http.Client? client}) : _client = client ?? http.Client();
@@ -163,6 +164,60 @@ class RankedApi {
       'privateRoom.start.response code=$normalizedCode status=${response.statusCode} body=${_compactBody(response.body)}',
     );
     return PrivateRoomSnapshotModel.fromJson(_decodePayload(response));
+  }
+
+  Future<LeaderboardSnapshotModel> getLeaderboard({
+    required LeaderboardWindowRange window,
+    String? userId,
+    int limit = 50,
+  }) async {
+    final response = await _send(
+      () => _client.get(
+        _httpUri('/leaderboard').replace(
+          queryParameters: <String, String>{
+            'window': window.apiValue,
+            'limit': '${limit.clamp(1, 50)}',
+            if (userId != null && userId.trim().isNotEmpty)
+              'userId': userId.trim(),
+          },
+        ),
+        headers: _headers,
+      ),
+    );
+    return LeaderboardSnapshotModel.fromJson(_decodePayload(response));
+  }
+
+  Future<UserProgress> getUserProgress(String userId) async {
+    final response = await _send(
+      () => _client.get(
+        _httpUri('/leaderboard/progress/${Uri.encodeComponent(userId.trim())}'),
+        headers: _headers,
+      ),
+    );
+    return UserProgress.fromJson(_decodePayload(response));
+  }
+
+  Future<UserProgress> reportFinishedGame({
+    required String resultId,
+    required String userId,
+    required String displayName,
+    String? photoUrl,
+    required String role,
+  }) async {
+    final response = await _send(
+      () => _client.post(
+        _httpUri('/leaderboard/report'),
+        headers: _headers,
+        body: jsonEncode(<String, dynamic>{
+          'resultId': resultId,
+          'userId': userId,
+          'displayName': displayName,
+          'photoUrl': photoUrl,
+          'role': role,
+        }),
+      ),
+    );
+    return UserProgress.fromJson(_decodePayload(response));
   }
 
   static const Map<String, String> _headers = <String, String>{

@@ -242,6 +242,7 @@ MatchResultsViewData buildMockMatchResultsViewData(
     pile: baseState?.pile ?? const PileState(currentSet: null, history: []),
     requirementText: baseState?.requirementText ?? 'Round Complete',
     log: baseState?.log ?? const <LogEntryModel>[],
+    completedRounds: baseState?.completedRounds ?? 1,
   );
 
   return buildMatchResultsViewData(mockState);
@@ -404,6 +405,7 @@ ExchangeViewData buildMockExchangeViewData(PublicGameStateModel? baseState) {
     pile: const PileState(currentSet: null, history: []),
     requirementText: 'New Round',
     log: const <LogEntryModel>[],
+    completedRounds: baseState?.completedRounds ?? 1,
   );
 
   return buildExchangeViewData(mockState)!;
