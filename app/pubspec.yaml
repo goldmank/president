@@ -44,6 +44,7 @@ dependencies:
   share_plus: ^11.1.0
   shared_preferences: ^2.5.3
   web_socket_channel: ^3.0.3
+  applovin_max: ^4.6.4
 
 dev_dependencies:
   flutter_test:

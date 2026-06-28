@@ -1,15 +1,27 @@
 import 'package:flutter/services.dart';
 
 class AppConfig {
-  AppConfig._({required this.serverEndpoint, required this.buildMode});
+  AppConfig._({
+    required this.serverEndpoint,
+    required this.buildMode,
+    required this.appLovinSdkKey,
+    required this.appLovinAndroidBannerAdUnitId,
+    required this.appLovinIosBannerAdUnitId,
+  });
 
   static AppConfig instance = AppConfig._(
     serverEndpoint: 'https://assad.ngrok.dev',
     buildMode: 'dev',
+    appLovinSdkKey: '',
+    appLovinAndroidBannerAdUnitId: '',
+    appLovinIosBannerAdUnitId: '',
   );
 
   final String serverEndpoint;
   final String buildMode;
+  final String appLovinSdkKey;
+  final String appLovinAndroidBannerAdUnitId;
+  final String appLovinIosBannerAdUnitId;
 
   bool get isDev => buildMode.toLowerCase() == 'dev';
   bool get isProd => buildMode.toLowerCase() == 'prod';
@@ -44,6 +56,11 @@ class AppConfig {
       buildMode: values['BUILD_MODE']?.isNotEmpty == true
           ? values['BUILD_MODE']!
           : instance.buildMode,
+      appLovinSdkKey: values['APPLOVIN_SDK_KEY']?.trim() ?? '',
+      appLovinAndroidBannerAdUnitId:
+          values['APPLOVIN_ANDROID_BANNER_AD_UNIT_ID']?.trim() ?? '',
+      appLovinIosBannerAdUnitId:
+          values['APPLOVIN_IOS_BANNER_AD_UNIT_ID']?.trim() ?? '',
     );
   }
 }

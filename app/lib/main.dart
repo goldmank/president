@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'firebase_options.dart';
+import 'src/ad_service.dart';
 import 'src/analytics_service.dart';
 import 'src/app_shell.dart';
 import 'src/app_config.dart';
@@ -23,6 +24,7 @@ Future<void> main() async {
       await AnalyticsService.instance.initialize();
       await GameSettingsService.instance.initialize();
       await UserProgressService.instance.initialize();
+      await AdService.instance.initialize();
       FlutterError.onError = (details) {
         FlutterError.presentError(details);
         unawaited(
